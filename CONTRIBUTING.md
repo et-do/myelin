@@ -1,0 +1,138 @@
+# Contributing to Myelin
+
+## Development Environment
+
+### Dev Container (recommended)
+
+The repo includes a Dev Container that sets up everything automatically:
+
+1. Open the repo in VS Code
+2. "Reopen in Container" when prompted (or `Ctrl+Shift+P` → "Dev Containers: Reopen in Container")
+3. The container installs dependencies, pre-commit hooks, and VS Code extensions automatically
+
+### Manual Setup
+
+```bash
+git clone https://github.com/et-do/myelin.git
+cd myelin
+uv sync --extra dev
+uv run pre-commit install
+```
+
+## Workflow
+
+We use a trunk-based workflow. All work goes through PRs into `main`.
+
+1. **Branch off main**: `git checkout -b feat/my-feature`
+2. **Use conventional commits** (see below)
+3. **Open a PR** into `main`
+4. CI runs lint, tests, type checking, and dependency review
+5. Merge when all checks pass
+
+### Conventional Commits
+
+We use [Conventional Commits](https://www.conventionalcommits.org/) to drive automated releases. Every commit message should follow this format:
+
+```
+<type>: <description>
+
+[optional body]
+```
+
+| Type | When to use | Version bump |
+|------|-------------|--------------|
+| `feat:` | New feature | minor (0.1.0 → 0.2.0) |
+| `fix:` | Bug fix | patch (0.1.0 → 0.1.1) |
+| `feat!:` or `fix!:` | Breaking change | minor while pre-1.0 |
+| `docs:` | Documentation only | none |
+| `chore:` | Maintenance, CI, deps | none |
+| `refactor:` | Code change, no new feature or fix | none |
+| `test:` | Adding or updating tests | none |
+| `perf:` | Performance improvement | none |
+
+Examples:
+```
+feat: add TTL-based memory expiration
+fix: prevent duplicate chunks on rapid store calls
+docs: update setup guide for cloud deployment
+feat!: change recall API to return scored results
+```
+
+### Releases
+
+Releases are fully automated via [release-please](https://github.com/googleapis/release-please):
+
+1. Merge PRs with conventional commits into `main`
+2. Release-please accumulates changes and opens a **Release PR** with a version bump + CHANGELOG
+3. When you're ready to cut a release, merge the Release PR
+4. A GitHub Release + tag is created automatically, and `pyproject.toml` version is bumped
+
+You never need to manually edit the version number.
+
+## Quality Checks
+
+All of these run in CI and should pass before merging:
+
+```bash
+# Tests with coverage
+uv run pytest -v --cov=myelin
+
+# Linting
+uv run ruff check .
+uv run ruff format --diff .
+
+# Type checking (strict)
+uv run mypy myelin/ --strict
+
+# Pre-commit (runs ruff, trailing whitespace, etc.)
+uv run pre-commit run --all-files
+```
+
+## Project Structure
+
+```
+myelin/           # Core library
+  hippocampus.py  # Vector store (ChromaDB) — fast semantic retrieval
+  neocortex.py    # Gist summarization + schema detection
+  amygdala.py     # Hebbian co-access tracking (SQLite)
+  activation.py   # Spreading activation across memory traces
+  decay.py        # Time-based memory decay
+  config.py       # Configuration (pydantic-settings)
+  mcp_server.py   # MCP server exposing tools to AI agents
+  cli.py          # CLI interface
+tests/            # Unit tests (pytest)
+benchmarks/       # LongMemEval, LoCoMo, regression gate
+.github/          # CI workflows, Copilot instructions
+```
+
+## Benchmarking
+
+### LongMemEval
+
+```bash
+bash benchmarks/longmemeval/download_data.sh
+
+uv run python -m benchmarks.longmemeval.run \
+    benchmarks/longmemeval/data/longmemeval_oracle.json \
+    benchmarks/longmemeval/output/myelin_oracle.jsonl 5 4
+
+uv run python -m benchmarks.longmemeval.score \
+    benchmarks/longmemeval/data/longmemeval_oracle.json \
+    benchmarks/longmemeval/output/myelin_oracle_YYYYMMDD_HHMMSS.jsonl
+```
+
+### LoCoMo
+
+```bash
+uv run python -m benchmarks.locomo.run
+uv run python -m benchmarks.locomo.score benchmarks/locomo/output/myelin_locomo.json
+```
+
+### Regression Gate
+
+Fast subset (54 LME + 304 LoCoMo questions). Fails if any metric drops >1pp below baseline.
+
+```bash
+uv run python -m benchmarks.regression.run --create-baseline
+uv run python -m benchmarks.regression.run
+```

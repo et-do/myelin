@@ -7,10 +7,7 @@
   "bootstrap-sha": "de9cc640767b9a3267acc378eadd77126859ef68",
   "packages": {
     ".": {
-      "package-name": "myelin",
-      "extra-files": [
-        "pyproject.toml"
-      ]
+      "package-name": "myelin"
     }
   }
 }
