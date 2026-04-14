@@ -148,16 +148,19 @@ uv pip install git+https://github.com/et-do/myelin.git
 
 **2. Add MCP config at the user level** (not per-project):
 
-- **VS Code:** Add to your user `settings.json` (`Ctrl+Shift+P` → "Preferences: Open User Settings (JSON)"):
+- **VS Code:** Add to your user-level `mcp.json` (recommended by VS Code for MCP servers):
+
+  - Open Command Palette (`Ctrl+Shift+P`) → "Preferences: Open User Settings (JSON)"
+  - Click the "Open user mcp.json" button (or manually edit the file at
+    `C:\Users\<you>\AppData\Roaming\Code\User\mcp.json` on Windows,
+    `~/.config/Code/User/mcp.json` on Linux/macOS)
 
   ```json
   {
-    "mcp": {
-      "servers": {
-        "myelin": {
-          "command": "uv",
-          "args": ["run", "myelin", "serve"]
-        }
+    "servers": {
+      "myelin": {
+        "command": "uv",
+        "args": ["run", "myelin", "serve"]
       }
     }
   }
