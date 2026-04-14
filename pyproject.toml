@@ -1,0 +1,77 @@
+[project]
+name = "myelin"
+version = "0.1.0"
+description = "Neuromorphic long-term AI memory system — brain-inspired context for AI agents"
+readme = "README.md"
+license = "MIT"
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    # Hippocampus — vector similarity for fast semantic retrieval
+    "chromadb>=1.5",
+    # Local embeddings — turns text into vectors without API calls
+    "sentence-transformers>=5.0",
+    # MCP server — exposes tools to VS Code Copilot / Claude / Cursor
+    "mcp>=1.27",
+    # Hebbian co-access tracking — lightweight SQLite storage
+    "sqlite-utils>=3.38",
+    # Data models for memories and metadata
+    "pydantic>=2.12",
+    # Config management (~/.myelin/config.toml)
+    "pydantic-settings>=2.13",
+]
+
+[project.optional-dependencies]
+experimental = [
+    # Math utilities for experimental decay curves
+    "numpy>=2.4",
+]
+dev = [
+    "pytest>=9.0",
+    "pytest-asyncio>=1.0",
+    "pytest-cov>=6.0",
+    "pytest-xdist>=3.5",
+    "ruff>=0.15",
+    "mypy>=1.20",
+    "pre-commit>=4.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/et-do/myelin"
+Repository = "https://github.com/et-do/myelin"
+Issues = "https://github.com/et-do/myelin/issues"
+
+[project.scripts]
+myelin = "myelin.cli:main"
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "RUF"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-n auto"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+plugins = ["pydantic.mypy"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"

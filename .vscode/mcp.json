@@ -1,0 +1,8 @@
+{
+  "servers": {
+    "myelin": {
+      "command": "uv",
+      "args": ["run", "myelin", "serve"]
+    }
+  }
+}

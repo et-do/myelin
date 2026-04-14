@@ -1,0 +1,40 @@
+{
+    "name": "Myelin Dev Container",
+    "image": "mcr.microsoft.com/devcontainers/python:3.13",
+    "features": {
+        "ghcr.io/devcontainers-extra/features/uv:1": {},
+    },
+    // Named volume for .venv so host venv doesn't conflict with container Linux venv
+    "mounts": [
+        "source=${localWorkspaceFolderBasename}-venv,target=${containerWorkspaceFolder}/.venv,type=volume"
+    ],
+    "postCreateCommand": "sudo chown vscode:vscode .venv && UV_LINK_MODE=copy uv sync --extra dev && uv run pre-commit install",
+    // Forward host OPENAI_API_KEY into the container (used by benchmark evaluation)
+    "remoteEnv": {
+        "HF_TOKEN": "${localEnv:HF_TOKEN}",
+        "OPENAI_API_KEY": "${localEnv:OPENAI_API_KEY}"
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.mypy-type-checker",
+                "charliermarsh.ruff",
+                "qwtel.sqlite-viewer",
+                "GitHub.copilot",
+                "GitHub.copilot-chat",
+                "tamasfe.even-better-toml",
+                "ms-python.debugpy",
+                "github.vscode-github-actions",
+                "MichaelErmer.vsex-chromadb-viewer"
+            ],
+            "settings": {
+                "python.defaultInterpreterPath": "${workspaceFolder}/.venv/bin/python",
+                "[python]": {
+                    "editor.defaultFormatter": "charliermarsh.ruff",
+                    "editor.formatOnSave": true
+                }
+            }
+        }
+    }
+}
