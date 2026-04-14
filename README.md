@@ -24,7 +24,7 @@ Myelin gives AI tools (GitHub Copilot, Claude, Cursor) a local, private memory s
 - [Configuration](#configuration)
 - [Neuroscience Mapping](#neuroscience-mapping)
 - [Development](#development)
-- [Benchmarking](#benchmarking)
+- [Contributing](CONTRIBUTING.md)
 - [References](#references)
 
 ---
@@ -148,16 +148,19 @@ uv pip install git+https://github.com/et-do/myelin.git
 
 **2. Add MCP config at the user level** (not per-project):
 
-- **VS Code:** Add to your user `settings.json` (`Ctrl+Shift+P` → "Preferences: Open User Settings (JSON)"):
+- **VS Code:** Add to your user-level `mcp.json` (recommended by VS Code for MCP servers):
+
+  - Open Command Palette (`Ctrl+Shift+P`) → "Preferences: Open User Settings (JSON)"
+  - Click the "Open user mcp.json" button (or manually edit the file at
+    `C:\Users\<you>\AppData\Roaming\Code\User\mcp.json` on Windows,
+    `~/.config/Code/User/mcp.json` on Linux/macOS)
 
   ```json
   {
-    "mcp": {
-      "servers": {
-        "myelin": {
-          "command": "uv",
-          "args": ["run", "myelin", "serve"]
-        }
+    "servers": {
+      "myelin": {
+        "command": "uv",
+        "args": ["run", "myelin", "serve"]
       }
     }
   }
@@ -623,54 +626,12 @@ git clone https://github.com/et-do/myelin.git
 cd myelin
 uv sync --extra dev
 uv run pre-commit install
-
-# Run tests
 uv run pytest -v --cov=myelin
-
-# Lint + type check
-uv run ruff check .
-uv run mypy myelin/ --strict
 ```
 
-GitHub Actions runs on every PR: lint, tests with coverage, type checking, and dependency vulnerability review.
+A Dev Container config is included — open in VS Code and "Reopen in Container" for a zero-setup environment.
 
----
-
-## Benchmarking
-
-### LongMemEval
-
-See [Results](#results) for methodology and metrics.
-
-```bash
-bash benchmarks/longmemeval/download_data.sh
-
-uv run python -m benchmarks.longmemeval.run \
-    benchmarks/longmemeval/data/longmemeval_oracle.json \
-    benchmarks/longmemeval/output/myelin_oracle.jsonl 5 4
-
-uv run python -m benchmarks.longmemeval.score \
-    benchmarks/longmemeval/data/longmemeval_oracle.json \
-    benchmarks/longmemeval/output/myelin_oracle_YYYYMMDD_HHMMSS.jsonl
-```
-
-### LoCoMo
-
-See [Results](#results) for methodology and metrics.
-
-```bash
-uv run python -m benchmarks.locomo.run
-uv run python -m benchmarks.locomo.score benchmarks/locomo/output/myelin_locomo.json
-```
-
-### Regression Gate
-
-Fast subset (54 LME + 304 LoCoMo questions). Fails if any metric drops >1pp below baseline.
-
-```bash
-uv run python -m benchmarks.regression.run --create-baseline
-uv run python -m benchmarks.regression.run
-```
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the full workflow: branching, conventional commits, automated releases, benchmarking, and project structure.
 
 ---
 
