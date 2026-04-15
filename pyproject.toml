@@ -1,6 +1,6 @@
 [project]
 name = "myelin"
-version = "0.1.0"
+version = "0.1.1"
 description = "Neuromorphic long-term AI memory system — brain-inspired context for AI agents"
 readme = "README.md"
 license = "MIT"
