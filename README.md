@@ -54,75 +54,39 @@ Myelin gives AI tools (GitHub Copilot, Claude, Cursor) a local, private memory s
 - No GPU required — runs on CPU
 - **No API keys or tokens** — all models are public, everything runs locally
 
-### Install
+### Install (Recommended: User-Level Virtual Environment)
+
+**Best practice:** Create a dedicated Python virtual environment for Myelin that is always available, regardless of your current project.
+
+#### 1. Create a persistent virtual environment
+
+**Windows (PowerShell):**
+```powershell
+python -m venv %USERPROFILE%\.myelin-venv
+%USERPROFILE%\.myelin-venv\Scripts\activate
+```
+
+**macOS/Linux:**
+```bash
+python3 -m venv ~/.myelin-venv
+source ~/.myelin-venv/bin/activate
+```
+
+#### 2. Install uv and Myelin
 
 ```bash
-# With uv (recommended)
+pip install uv
 uv pip install git+https://github.com/et-do/myelin.git
-
-# Or with pip
-pip install git+https://github.com/et-do/myelin.git
 ```
 
-### Connect to Your AI Agent
+#### 3. (Optional but recommended) Add the venv’s Scripts/bin directory to your PATH
+- **Windows:** Add `%USERPROFILE%\.myelin-venv\Scripts` to your system/user PATH.
+- **macOS/Linux:** Add `~/.myelin-venv/bin` to your PATH (e.g., in `.bashrc` or `.zshrc`).
 
-Myelin runs as a local [MCP](https://modelcontextprotocol.io/) server over stdio. Your AI tool manages the server process — you don't need to run it manually.
+#### 4. Configure your AI tool to use Myelin
+- In your user-level `mcp.json` (see below), set `"command": "uv"`.
 
-<details>
-<summary><strong>VS Code / GitHub Copilot</strong></summary>
-
-Add to `.vscode/mcp.json` in your project (or user-level `settings.json` for cross-project):
-
-```json
-{
-  "servers": {
-    "myelin": {
-      "command": "uv",
-      "args": ["run", "myelin", "serve"]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Claude Desktop</strong></summary>
-
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
-
-```json
-{
-  "mcpServers": {
-    "myelin": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/et-do/myelin.git", "myelin", "serve"]
-    }
-  }
-}
-```
-
-</details>
-
-<details>
-<summary><strong>Cursor</strong></summary>
-
-Add to `.cursor/mcp.json` in your project:
-
-```json
-{
-  "mcpServers": {
-    "myelin": {
-      "command": "uv",
-      "args": ["run", "myelin", "serve"]
-    }
-  }
-}
-```
-
-</details>
-
-### Verify
+#### 5. Verify
 
 ```bash
 uv run myelin status
@@ -138,15 +102,9 @@ Myelin stores all data in a single directory (`~/.myelin` by default). How you d
 
 **Best for:** Solo developers who want one memory across all projects and agents.
 
-This is the default. Install once, configure your AI tool at the user level, and every project shares the same memory.
+This is the default and recommended setup. Follow the [Quick Start Install](#install-recommended-user-level-virtual-environment) steps above to create a persistent venv and install Myelin. Then configure your AI tool at the user level, and every project shares the same memory.
 
-**1. Install globally (or in a shared venv):**
-
-```bash
-uv pip install git+https://github.com/et-do/myelin.git
-```
-
-**2. Add MCP config at the user level** (not per-project):
+**1. Add MCP config at the user level** (not per-project):
 
 - **VS Code:** Add to your user-level `mcp.json` (recommended by VS Code for MCP servers):
 
@@ -168,7 +126,7 @@ uv pip install git+https://github.com/et-do/myelin.git
 
 - **Claude Desktop:** Add to your `claude_desktop_config.json` (see Quick Start above).
 
-**3. That's it.** All projects and agents share `~/.myelin/`. Use `project` metadata when storing to keep knowledge organized:
+**2. That's it.** All projects and agents share `~/.myelin/`. Use `project` metadata when storing to keep knowledge organized:
 
 ```
 "Store this as project=backend, scope=auth"
