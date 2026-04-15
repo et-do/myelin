@@ -10,6 +10,7 @@ metadata for filtered retrieval. Handles:
 from __future__ import annotations
 
 import logging
+import math
 import os
 import threading
 from datetime import UTC, datetime
@@ -460,6 +461,24 @@ class Hippocampus:
             recall_results.sort(key=lambda r: r.score, reverse=True)
         else:
             recall_results = _probe(query, n * 3)
+
+        # Session evidence aggregation: when multiple chunks from the
+        # same session appear in the candidate pool, the session has
+        # broader relevance and is more likely to be a true match.
+        # Boost the top chunk per session proportionally to the number
+        # of contributing chunks (logarithmic to avoid over-weighting).
+        agg_boost = self._settings.session_aggregation_boost
+        if agg_boost > 0 and len(recall_results) > 1:
+            session_chunks: dict[str | None, list[RecallResult]] = {}
+            for r in recall_results:
+                key = r.memory.metadata.scope or r.memory.metadata.parent_id
+                session_chunks.setdefault(key, []).append(r)
+            for chunks in session_chunks.values():
+                if len(chunks) > 1:
+                    chunks.sort(key=lambda r: r.score, reverse=True)
+                    bonus = math.log1p(len(chunks) - 1) * agg_boost
+                    chunks[0].score *= 1.0 + bonus
+            recall_results.sort(key=lambda r: r.score, reverse=True)
 
         # Spreading activation: boost results containing entities related
         # to the query via the semantic network (Collins & Loftus 1975).

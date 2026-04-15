@@ -240,7 +240,7 @@ def run_conversation(
 def main(
     data_file: str,
     output_file: str,
-    n_results: int = 10,
+    n_results: int = 20,
     limit: int = 0,
 ) -> None:
     """Run the full LoCoMo benchmark."""

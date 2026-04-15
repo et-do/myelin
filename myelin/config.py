@@ -58,6 +58,9 @@ class MyelinSettings(BaseSettings):
     # Multi-probe recall — query reformulation with merged candidate pool
     multiprobe: bool = True  # enable multi-probe recall
 
+    # Session evidence aggregation — boost sessions with multiple chunks in pool
+    session_aggregation_boost: float = 0.15  # log bonus per extra chunk (0 = off)
+
     # Spreading activation — entity-graph post-retrieval boost
     spreading_activation: bool = True  # enable if semantic network available
     spreading_boost: float = 0.15  # multiplier per related entity match

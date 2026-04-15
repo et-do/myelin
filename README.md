@@ -422,9 +422,9 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 
 | Metric | Myelin | MemPalace hybrid v5 |
 |--------|--------|---------------------|
-| **R@5** | **74.1%** | — |
-| **R@10** | **83.6%** | 88.9% |
-| **R@20** | **83.6%** | — |
+| **R@5** | **88.9%** | — |
+| **R@10** | **95.1%** | 88.9% |
+| **R@20** | **95.1%** | — |
 
 ### Methodology
 
