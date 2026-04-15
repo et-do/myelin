@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import sys
 from contextvars import ContextVar
 from typing import Any
@@ -49,3 +50,24 @@ def setup_logging(level: int = logging.INFO) -> None:
     handler.setFormatter(JSONFormatter())
     root.addHandler(handler)
     root.propagate = False
+
+
+# Noisy third-party loggers that emit warnings/info during model loading.
+_NOISY_LOGGERS = (
+    "transformers.modeling_utils",
+    "safetensors",
+    "sentence_transformers",
+    "sentence_transformers.models",
+    "sentence_transformers.cross_encoder",
+    "huggingface_hub",
+    "huggingface_hub.utils._http",
+)
+
+
+def suppress_noisy_loggers() -> None:
+    """Silence verbose ML-library loggers and set env vars to hide progress bars."""
+    os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
+    for name in _NOISY_LOGGERS:
+        logging.getLogger(name).setLevel(logging.ERROR)

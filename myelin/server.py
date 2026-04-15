@@ -177,8 +177,24 @@ def do_store(
     count_before = hc.count()
     memory = hc.store(content, metadata)
     if memory is None:
+        logger.info(
+            "store rejected: too short or near-duplicate",
+            extra={"project": project, "scope": scope},
+        )
         return {"status": "rejected", "reason": "too short or near-duplicate"}
     chunks_stored = hc.count() - count_before
+    logger.info(
+        "stored memory %s (%d chars, %d chunks)",
+        memory.id,
+        len(content),
+        max(chunks_stored, 1),
+        extra={
+            "memory_id": memory.id,
+            "project": project,
+            "scope": scope,
+            "chunks": max(chunks_stored, 1),
+        },
+    )
     result: dict[str, Any] = {"id": memory.id, "status": "stored"}
     if chunks_stored > 1:
         result["chunks"] = chunks_stored
@@ -214,6 +230,13 @@ def do_recall(
         scope=scope or None,
         memory_type=memory_type or None,
         reference_date=reference_date or datetime.now(UTC),
+    )
+
+    logger.info(
+        "recall found %d results for query (%d chars)",
+        len(results),
+        len(query),
+        extra={"result_count": len(results), "project": project, "scope": scope},
     )
 
     # Hebbian boost — re-rank by co-access patterns
@@ -259,7 +282,14 @@ def do_forget(memory_id: str) -> dict[str, Any]:
     """Forget a memory by ID."""
     ok = _get_hippocampus().forget(memory_id)
     _get_thalamus().unpin(memory_id)
-    return {"id": memory_id, "status": "forgotten" if ok else "not_found"}
+    status = "forgotten" if ok else "not_found"
+    logger.info(
+        "forget %s: %s",
+        memory_id,
+        status,
+        extra={"memory_id": memory_id, "status": status},
+    )
+    return {"id": memory_id, "status": status}
 
 
 def do_decay_sweep() -> dict[str, Any]:
@@ -274,7 +304,14 @@ def do_decay_sweep() -> dict[str, Any]:
         _get_thalamus().cleanup(valid_ids)
     else:
         count = 0
-    return {"pruned": count, "remaining": hc.count()}
+    remaining = hc.count()
+    logger.info(
+        "decay sweep: pruned %d, remaining %d",
+        count,
+        remaining,
+        extra={"pruned": count, "remaining": remaining},
+    )
+    return {"pruned": count, "remaining": remaining}
 
 
 def do_status() -> dict[str, Any]:

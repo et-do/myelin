@@ -32,23 +32,11 @@ References:
 
 from __future__ import annotations
 
-import logging
-import os
 from typing import Any
 
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
-os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-for _ln in (
-    "transformers.modeling_utils",
-    "safetensors",
-    "sentence_transformers.models",
-    "sentence_transformers",
-    "sentence_transformers.cross_encoder",
-    "huggingface_hub",
-    "huggingface_hub.utils._http",
-):
-    logging.getLogger(_ln).setLevel(logging.ERROR)
+from .log import suppress_noisy_loggers
+
+suppress_noisy_loggers()
 
 from sentence_transformers import CrossEncoder  # noqa: E402
 
