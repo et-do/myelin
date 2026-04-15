@@ -22,6 +22,11 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 - Use `memory_type` when it's clear: "semantic" for decisions/facts, "procedural" for how-to, "episodic" for events, "prospective" for plans.
 - Be specific. "We use JWT RS256 because asymmetric keys let the API gateway verify without the signing secret" is better than "We use JWT."
 
+### Maintenance
+- After extended sessions (10+ stores), run `consolidate` to build the semantic network — it improves recall by linking related entities.
+- Consolidation auto-triggers every 50 stores, but running it manually after a burst of activity gives immediate benefit.
+- Periodically run `decay_sweep` to prune stale memories (90+ days idle, <2 accesses).
+
 ### What NOT to Store
 - Trivial or ephemeral information (typo fixes, one-off commands).
 - Exact code blocks — store the reasoning, not the implementation.

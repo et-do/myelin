@@ -19,7 +19,6 @@ Myelin gives AI tools (GitHub Copilot, Claude, Cursor) a local, private memory s
 - [Teaching Your Agent](#teaching-your-agent)
 - [Results](#results)
 - [How It Works](#how-it-works)
-- [Architecture](#architecture)
 - [CLI & MCP Tools](#cli--mcp-tools)
 - [Inspecting Your Data](#inspecting-your-data)
 - [Configuration](#configuration)
@@ -147,21 +146,55 @@ Open Command Palette (`Ctrl+Shift+P`) → `Preferences: Open User Settings (JSON
 
 **Claude Desktop:** Add the same `command`/`args` to your `claude_desktop_config.json`.
 
-#### Step 5 — (Recommended) Add the venv to your PATH
+#### Step 5 — Make `uv` findable by VS Code
 
-This lets VS Code find `uv.exe` without needing a full path in the MCP config.
+VS Code doesn't activate your venv — it needs to find `uv` on its own. Pick **one** of these options:
+
+**Option A: Use full paths in mcp.json (no admin / no PATH changes)**
+
+This works on locked-down work machines where you can't modify environment variables. Just use absolute paths in your MCP config (Step 4):
 
 **Windows:**
-1. Press `Win + S`, type **environment variables**, select **Edit the system environment variables**.
+```json
+{
+  "servers": {
+    "myelin": {
+      "command": "C:\\Users\\<you>\\.myelin-venv\\Scripts\\uv.exe",
+      "args": ["run", "myelin", "serve"]
+    }
+  }
+}
+```
+
+**macOS/Linux:**
+```json
+{
+  "servers": {
+    "myelin": {
+      "command": "/Users/<you>/.myelin-venv/bin/uv",
+      "args": ["run", "myelin", "serve"]
+    }
+  }
+}
+```
+
+> Replace `<you>` with your actual username. This is the most reliable option — it works regardless of PATH, admin rights, or shell configuration.
+
+**Option B: Add the venv to your PATH**
+
+This lets you use the short `"command": "uv"` form everywhere.
+
+*Windows (User variables — no admin required):*
+1. Press `Win + S`, type **environment variables**, select **Edit the system environment variables**
 2. Click **Environment Variables…**
-3. Under **User variables**, select `Path` → **Edit…** → **New**:
+3. Under **User variables** (top section, not System), select `Path` → **Edit…** → **New**:
    ```
    %USERPROFILE%\.myelin-venv\Scripts
    ```
-   > `%USERPROFILE%` is correct here — the Windows Environment Variables UI uses CMD syntax, not PowerShell.
+   > Editing User variables does **not** require admin. System variables (bottom section) does.
 4. Click **OK** on all dialogs. **Restart VS Code** for the change to take effect.
 
-**macOS/Linux:** Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
+*macOS/Linux:* Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
 ```bash
 export PATH="$HOME/.myelin-venv/bin:$PATH"
 ```
@@ -306,6 +339,14 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 - Be specific. "We use JWT RS256 because asymmetric keys let the API gateway
   verify without the signing secret" is better than "We use JWT."
 
+### Maintenance
+- After extended sessions (10+ stores), run `consolidate` to build the
+  semantic network — improves recall by linking related entities.
+- Consolidation auto-triggers every 50 stores, but running it manually
+  after a burst of activity gives immediate benefit.
+- Periodically run `decay_sweep` to prune stale memories (90+ days idle,
+  <2 accesses).
+
 ### What NOT to Store
 - Trivial or ephemeral information (typo fixes, one-off commands).
 - Exact code blocks — store the reasoning, not the implementation.
@@ -372,67 +413,6 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 
 ## How It Works
 
-### Store + Recall Example
-
-#### Storing: `"We decided to use JWT with RS256 for the auth service"`
-
-```
-1. AMYGDALA (input gate)
-   Content is 54 chars — passes min_content_length (20).
-   No near-duplicates found — passes dedup_similarity_threshold (0.95).
-   → Accepted.
-
-2. PREFRONTAL CORTEX (schema classification)
-   Detects "decided" → schema match: decision → memory_type = "semantic"
-
-3. CHUNKING (pattern separation)
-   Content is 54 chars — well under chunk_max_chars (1000).
-   → Stored as a single memory.
-
-4. ENTORHINAL CORTEX (context coordinates)
-   extract_keywords → ["jwt", "rs256", "auth", "service"]
-   assign_region → "security"
-   → Stored as ec_topics, ec_region metadata.
-
-5. PERIRHINAL CORTEX (gist extraction)
-   summarise → "We decided to use JWT with RS256 for the auth service"
-   → Gist embedding stored in summary index.
-
-6. HIPPOCAMPUS (episodic store)
-   Encodes content → 384-dim vector via all-MiniLM-L6-v2.
-   Stores in ChromaDB with all metadata.
-   → Returns memory ID: "mem_a1b2c3"
-```
-
-#### Recalling: `"What auth approach did we pick?"`
-
-```
-1. QUERY PLANNER — auto-infers scope="auth", memory_type="semantic"
-
-2. MULTI-PROBE — generates 3 query variants:
-   original, keywords-only, entity-expanded (via semantic network)
-
-3. PER-PROBE RETRIEVAL (×3)
-   Dual-pathway ChromaDB search (filtered + unfiltered)
-   → gist matching → keyword re-rank → cross-encoder blend
-
-4. MERGE + RE-SCORE — pool candidates, keep best per memory,
-   re-score with cross-encoder against original query
-
-5. SPREADING ACTIVATION — entity graph boosts related memories
-
-6. LATERAL INHIBITION — max 1 result per session for diversity
-
-7. RETURN TOP-5
-   "We decided to use JWT with RS256 for the auth service"  score=0.94
-   "RS256 key rotation runs every 90 days"                  score=0.71
-   ...
-```
-
----
-
-## Architecture
-
 ### Core Concepts
 
 | Concept | Neuroscience | Myelin Equivalent |
@@ -479,32 +459,6 @@ STORE (fast, zero-LLM)              RECALL (multi-probe)
   Hippocampus ─ embed + store         Return top-k
 ```
 
-### Store Path
-
-| # | Component | Module | What It Does |
-|---|-----------|--------|-------------|
-| 1 | **Amygdala** | `store/amygdala.py` | Rejects noise: too short, near-duplicate, or low-value content |
-| 2 | **Prefrontal Cortex** | `store/prefrontal.py` | Auto-classifies `memory_type` via regex schema matching |
-| 3 | **Pattern Separation** | `store/chunking.py` | Splits long content into focused chunks. Auto-detects conversations vs prose. |
-| 4 | **Entorhinal Cortex** | `store/entorhinal.py` | Extracts topic keywords, assigns domain region, detects speakers |
-| 5 | **Perirhinal Cortex** | `store/perirhinal.py` | Generates extractive gist summaries (no LLM) |
-| 6 | **Hippocampus** | `store/hippocampus.py` | Encodes content → 384-dim embedding, stores in ChromaDB |
-
-### Recall Path
-
-| # | Component | Module | What It Does |
-|---|-----------|--------|-------------|
-| 1 | **Query Planner** | `recall/query_planner.py` | Auto-infers `memory_type` and `scope` filters from query |
-| 2 | **Multi-Probe** | `store/hippocampus.py` | 3 query variants: original, keywords-only, entity-expanded |
-| 3 | **Perirhinal Match** | `store/perirhinal.py` | Gist-trace familiarity matching |
-| 4 | **Vector Search** | `store/hippocampus.py` | Dual-pathway ChromaDB query: filtered + unfiltered |
-| 5 | **Entorhinal Re-rank** | `store/entorhinal.py` | Boosts results with keyword overlap |
-| 6 | **Cross-Encoder** | `store/hippocampus.py` | Blended re-ranking: `α × CE + (1-α) × bi-encoder` |
-| 7 | **Time Cells** | `recall/time_cells.py` | Temporal reference boost ("last Tuesday", "3 days ago") |
-| 8 | **Pool Merge** | `store/hippocampus.py` | Merge probes, keep best per memory, re-score |
-| 9 | **Spreading Activation** | `store/neocortex.py` | Entity graph priming |
-| 10 | **Lateral Inhibition** | `store/hippocampus.py` | Session diversity: max `lateral_k` per scope |
-
 ### Post-Recall
 
 | Component | Module | What It Does |
@@ -520,6 +474,140 @@ STORE (fast, zero-LLM)              RECALL (multi-probe)
 | **Entity Extraction** | `store/consolidation.py` | Regex-based extraction of names, tech identifiers, terms |
 | **Semantic Network** | `store/neocortex.py` | Entity graph with weighted co-occurrence edges |
 | **Auto-trigger** | `server.py` | Fires every `consolidation_interval` stores |
+
+### Detailed Walkthrough
+
+#### Storing: `"We decided to use JWT with RS256 for the auth service"`
+
+**1. Amygdala** — `store/amygdala.py` (input gate)
+- Content is 54 chars — passes `min_content_length` (20)
+- Embeds content and queries ChromaDB for nearest neighbors
+- Max similarity < `dedup_similarity_threshold` (0.95) — not a duplicate
+- → **Accepted**
+
+**2. Prefrontal Cortex** — `store/prefrontal.py` (schema classification)
+- Matches content against **5 schema templates**, each with 4–5 regex marker patterns:
+  - `decision` → semantic (markers: "decided", "chose", "went with", "agreed on", …)
+  - `preference` → procedural (markers: "always", "prefer", "convention", "style guide", …)
+  - `procedure` → procedural (markers: "step 1", "how to", "deploy/build/test", …)
+  - `plan` → prospective (markers: "TODO", "next steps", "roadmap", "going to", …)
+  - `event` → episodic (markers: "yesterday", "debugged", "incident", "happened", …)
+- `"decided"` fires the **decision** schema → `memory_type = "semantic"`
+- Confidence = fraction of markers that fire (1/5 = 0.2 — one match is enough)
+- No match → defaults to `"episodic"`
+
+**3. Chunking** — `store/chunking.py` (pattern separation)
+- Content is 54 chars — well under `chunk_max_chars` (1000) → stored as a single memory
+- For longer content:
+  - **Conversation detection**: looks for role markers (`user:`/`assistant:`) or named speakers (`Caroline:`, `Dr. Smith:`)
+  - **Exchange-pair splitting**: keeps user + assistant turns together
+  - **Topic-shift detection**: computes keyword overlap (Jaccard) between adjacent turns — when overlap drops below **15%**, forces a new chunk boundary
+  - **Text fallback**: overlapping segments (**200-char overlap**) split at paragraph boundaries
+- Embedding model has a 256-token window (~1000 chars) — chunking ensures every segment fits
+
+**4. Entorhinal Cortex** — `store/entorhinal.py` (context coordinates)
+- **LEC pathway** — topic keywords:
+  - Term-frequency extraction on non-stop-words → top 5 keywords
+  - → `ec_topics`: `["jwt", "rs256", "auth", "service"]`
+- **MEC pathway** — domain region:
+  - Matches against **6 region classifiers** (each a regex pattern set):
+    - `technology` — code, api, database, docker, python, react, sql, …
+    - `security` — auth, jwt, oauth, encrypt, token, password, rbac, …
+    - `health` — doctor, diagnosis, fitness, prescription, therapy, …
+    - `finance` — budget, invest, mortgage, tax, billing, invoice, …
+    - `personal` — birthday, family, vacation, recipe, pet, wedding, …
+    - `work` — meeting, sprint, deadline, roadmap, onboarding, …
+  - Requires **≥2 pattern hits** to assign (avoids false positives)
+  - `"auth"` + `"jwt"` → `ec_region`: `"security"`
+- **Speaker detection** — "who" pathway:
+  - Extracts named speakers from `"Name:"` patterns at line start
+  - Filters generic roles (`user`, `assistant`, `human`, `ai`, `system`, `bot`)
+  - → `ec_speakers`: e.g., `["Caroline", "Dr. Smith"]`
+
+**5. Perirhinal Cortex** — `store/perirhinal.py` (gist extraction)
+- **Extractive summarisation** (no LLM) — scores each sentence by:
+  - Signal regex hits (decisions, state changes, personal facts, life events, activities)
+  - Named entity rarity — names/places appearing in only 1–2 sentences score higher
+- Selects top sentences up to ~200 chars
+- → Gist embedding stored in a **separate ChromaDB summary collection**, linked to parent session via `parent_id`
+
+**6. Hippocampus** — `store/hippocampus.py` (episodic store)
+- Encodes content → **384-dim vector** via `all-MiniLM-L6-v2`
+- Stores in ChromaDB with full metadata:
+  - `memory_type`, `project`, `scope`, `tags`
+  - `ec_topics`, `ec_region`, `ec_speakers`
+  - `session_date`, `parent_id`
+- → Returns memory ID: `"mem_a1b2c3"`
+
+---
+
+#### Recalling: `"What auth approach did we pick?"`
+
+**1. Query Planner** — `recall/query_planner.py` (auto-filter inference)
+- Matches query against regex patterns to infer **memory_type**:
+  - `semantic` — "what did we decide/choose", "what is/was", "definition of"
+  - `procedural` — "how do/does", "prefer/convention/style"
+  - `episodic` — "when did/what happened", "yesterday/last week", "who said"
+  - `prospective` — "what should", "plan/next/todo", "roadmap/deadline"
+- Matches query against **10 scope patterns**: `auth`, `database`, `deploy`, `security`, `testing`, `api`, `frontend`, `backend`, `billing`, `monitoring`
+- `"What … did we pick"` → `memory_type = "semantic"`, `scope = "auth"`
+
+**2. Multi-Probe** — `store/hippocampus.py` (3 query variants)
+- **Probe 1**: original query — `"What auth approach did we pick?"`
+- **Probe 2**: keyword-focused — top 8 extracted keywords joined as text
+- **Probe 3**: entity-expanded — spreads seed keywords through the neocortex entity graph, appends related entities discovered via co-occurrence
+
+**3. Per-Probe Retrieval** (×3, each runs the full sub-pipeline)
+
+Each probe passes through these stages:
+
+- **a. Perirhinal gist search** (`store/perirhinal.py`) — queries the summary collection for familiar sessions, returns top-k `parent_id`s ranked by gist similarity
+- **b. Dual-pathway ChromaDB search** (`store/hippocampus.py`):
+  - *Filtered path*: applies auto-inferred `memory_type` + `scope` as ChromaDB `where` clause
+  - *Unfiltered path*: applies only explicit params (`project`, `language`)
+  - Merges by lowest distance per ID — prevents auto-filters from excluding relevant results
+- **c. Entorhinal re-rank** (`store/entorhinal.py`) — keyword overlap boost:
+  - `score *= 1.0 + entorhinal_boost (0.3) × Jaccard overlap`
+  - If query mentions a known speaker name: `score *= 1.0 + speaker_boost (0.2)`
+- **d. Perirhinal gist boost** — sessions matching gist search:
+  - `score *= 1.0 + perirhinal_boost (0.5) × gist similarity`
+- **e. Gist retrieval pathway** — injects best chunks from high-scoring gist sessions (batch ChromaDB lookup by `parent_id`)
+- **f. Cross-encoder re-ranking** (`store/hippocampus.py`) — blends CE and bi-encoder scores:
+  - `score = α × CE_normalized + (1-α) × bi_normalized` where `α = neocortex_weight (0.6)`
+- **g. Time-cell boost** (`recall/time_cells.py`) — detects temporal expressions (`"3 days ago"`, `"last Tuesday"`, `"in March"`) with ± buffer windows (±1 day for days, ±3 for weeks, ±7 for months):
+  - Recency formula: `boost = 2^(-age_days / half_life_days)`
+  - Additive: `score += temporal_boost (0.6)` for date-range matches
+- **h. Lateral inhibition** (`store/hippocampus.py`) — max `lateral_k` (1) result per session/scope, keeps highest-scoring per group
+
+**4. Multiprobe Merge** — `store/hippocampus.py`
+- Pools all candidates from 3 probes, keeps best score per memory ID
+- Re-scores merged pool with cross-encoder against original query (at `α/2` blending weight to preserve per-probe rankings)
+- Soft recency gradient: `score *= 1.0 + 0.1 × 2^(-age / half_life)`
+
+**5. Spreading Activation** — `store/neocortex.py` (entity graph boost)
+- Extracts entities from top results, walks the neocortex entity graph (co-occurrence edges, max 2 hops, distance-decayed propagation)
+- `score *= 1.0 + spreading_boost (0.15) × activation`
+
+**6. Session Evidence Aggregation**
+- Groups results by session — sessions with multiple retrieved chunks get a logarithmic boost:
+  - `score *= 1.0 + log1p(chunk_count - 1) × agg_boost`
+- Applied to top chunk per session — rewards sessions with broad evidence coverage
+
+**7. Lateral Inhibition** (final pass)
+- Enforces session diversity one more time after merge + boosts
+- Max `lateral_k` (1) result per session
+
+**8. Return top-5**
+
+| Result | Score |
+|--------|-------|
+| "We decided to use JWT with RS256 for the auth service" | 0.94 |
+| "RS256 key rotation runs every 90 days" | 0.71 |
+| … | … |
+
+**Post-recall:**
+- **Hebbian LTP** (`recall/activation.py`) — co-retrieved memories strengthen mutual links: `weight += hebbian_delta` per pair, future boost = `hebbian_scale × log1p(weight)`
+- **Thalamus overlay** (`store/thalamus.py`) — prepends any pinned memories (L0 identity/system context, L1 critical facts) to every result set
 
 ---
 
@@ -594,7 +682,7 @@ The `.db` files are standard SQLite databases. You can open them with any SQLite
 
 ```bash
 # Hebbian co-access links (which memories are associated)
-sqlite3 ~/.myelin/hebbian.db ".tables" 
+sqlite3 ~/.myelin/hebbian.db ".tables"
 sqlite3 ~/.myelin/hebbian.db "SELECT * FROM hebbian_links ORDER BY weight DESC LIMIT 10;"
 
 # Semantic network (entities and relationships built by consolidation)
