@@ -1,12 +1,37 @@
-<p align="center">
+<div align="center">
   <img src="img/myelin.png" alt="Myelin" width="200"/>
-</p>
 
-# Myelin
+  <h1>Myelin</h1>
 
-**Neuromorphic long-term AI memory** — brain-inspired persistent context for AI agents.
+  <strong>Neuromorphic long-term AI memory</strong> — brain-inspired persistent context for AI agents.
 
-Myelin gives AI tools (GitHub Copilot, Claude, Cursor) a local, private memory system modeled after how the human brain stores and retrieves information. It encodes context, strengthens with use, separates patterns, and prunes what fades — no LLM calls, no API keys, fully offline.
+  <p>
+    <a href="#quick-start">Quick Start</a> ·
+    <a href="#how-it-works">How It Works</a> ·
+    <a href="#results">Benchmarks</a> ·
+    <a href="#cli--mcp-tools">CLI & Tools</a> ·
+    <a href="CONTRIBUTING.md">Contributing</a>
+  </p>
+
+  <p>
+    <a href="https://github.com/et-do/myelin/blob/main/LICENSE"><img src="https://img.shields.io/github/license/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="License"></a>
+    <a href="https://github.com/et-do/myelin/stargazers"><img src="https://img.shields.io/github/stars/et-do/myelin?colorA=363a4f&colorB=b7bdf8&style=flat" alt="Stars"></a>
+    <a href="https://github.com/et-do/myelin/issues"><img src="https://img.shields.io/github/issues/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="Issues"></a>
+    <a href="https://github.com/et-do/myelin/commits/main"><img src="https://img.shields.io/github/last-commit/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="Last Commit"></a>
+    <img src="https://img.shields.io/badge/python-≥3.11-b7bdf8?colorA=363a4f" alt="Python 3.11+">
+  </p>
+
+  <br />
+
+  <p>
+    Myelin gives AI tools (GitHub Copilot, Claude, Cursor) a local, private memory system<br />
+    modeled after how the human brain stores and retrieves information.<br />
+    It encodes context, strengthens with use, separates patterns, and prunes what fades —<br />
+    no LLM calls, no API keys, fully offline.
+  </p>
+</div>
+
+<br />
 
 ## Table of Contents
 
