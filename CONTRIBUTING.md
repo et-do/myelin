@@ -91,18 +91,30 @@ uv run pre-commit run --all-files
 ## Project Structure
 
 ```
-myelin/           # Core library
-  hippocampus.py  # Vector store (ChromaDB) — fast semantic retrieval
-  neocortex.py    # Gist summarization + schema detection
-  amygdala.py     # Hebbian co-access tracking (SQLite)
-  activation.py   # Spreading activation across memory traces
-  decay.py        # Time-based memory decay
-  config.py       # Configuration (pydantic-settings)
-  mcp_server.py   # MCP server exposing tools to AI agents
-  cli.py          # CLI interface
-tests/            # Unit tests (pytest)
-benchmarks/       # LongMemEval, LoCoMo, regression gate
-.github/          # CI workflows, Copilot instructions
+myelin/               # Core library
+  store/              # Store path modules
+    hippocampus.py    # Vector store (ChromaDB) — embed + store + dual-path search
+    amygdala.py       # Input gate — rejects noise, near-duplicates
+    prefrontal.py     # Auto-classifies memory_type via schema matching
+    chunking.py       # Pattern separation — splits long content into chunks
+    entorhinal.py     # Context coordinates — keywords, region, speakers
+    perirhinal.py     # Gist extraction — extractive summaries (no LLM)
+    neocortex.py      # Semantic network — entity graph + spreading activation
+    consolidation.py  # Offline replay — entity extraction + graph building
+    thalamus.py       # Pinned memories + recency tracking
+  recall/             # Recall path modules
+    query_planner.py  # Auto-infers filters from query
+    activation.py     # Hebbian co-access learning
+    decay.py          # TTL pruning of stale memories
+    time_cells.py     # Temporal reference detection + boost
+  server.py           # MCP server exposing tools to AI agents
+  cli.py              # CLI interface
+  config.py           # Configuration (pydantic-settings)
+  models.py           # Pydantic data models
+  reranker.py         # Cross-encoder re-ranking
+tests/                # Unit tests (pytest)
+benchmarks/           # LongMemEval, LoCoMo, regression gate
+.github/              # CI workflows, Copilot instructions
 ```
 
 ## Benchmarking

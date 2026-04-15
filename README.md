@@ -21,6 +21,7 @@ Myelin gives AI tools (GitHub Copilot, Claude, Cursor) a local, private memory s
 - [How It Works](#how-it-works)
 - [Architecture](#architecture)
 - [CLI & MCP Tools](#cli--mcp-tools)
+- [Inspecting Your Data](#inspecting-your-data)
 - [Configuration](#configuration)
 - [Neuroscience Mapping](#neuroscience-mapping)
 - [Development](#development)
@@ -56,22 +57,77 @@ Myelin gives AI tools (GitHub Copilot, Claude, Cursor) a local, private memory s
 
 ### Install
 
-```bash
-# With uv (recommended)
-uv pip install git+https://github.com/et-do/myelin.git
+Myelin uses **two directories** in your home folder — both are created during setup:
 
-# Or with pip
-pip install git+https://github.com/et-do/myelin.git
+| What | Path (Windows) | Path (macOS/Linux) |
+|---|---|---|
+| **Virtual environment** (Python, uv, Myelin code) | `C:\Users\<you>\.myelin-venv\` | `~/.myelin-venv/` |
+| **Data directory** (memories, embeddings, DBs) | `C:\Users\<you>\.myelin\` | `~/.myelin/` |
+
+The venv is created manually (Step 1). The data directory is created automatically on first run.
+
+> **Common error:** `spawn …\.myelin-venv\Scripts\uv.exe ENOENT` means the venv hasn't been created yet or `uv` isn't installed inside it. Follow all steps below.
+
+#### Step 1 — Create a persistent virtual environment
+
+This venv must live in your **home directory** — not inside any project folder. This ensures it's always available regardless of which repo you're working in.
+
+> **Windows gotcha:** Use `$env:USERPROFILE` (PowerShell) — **not** `%USERPROFILE%` (that's CMD syntax and will create a broken literal folder name in PowerShell).
+
+**Windows (PowerShell):**
+```powershell
+python -m venv $env:USERPROFILE\.myelin-venv
+& $env:USERPROFILE\.myelin-venv\Scripts\Activate.ps1
+```
+This creates `C:\Users\<you>\.myelin-venv\` in your home directory.
+
+**macOS/Linux:**
+```bash
+python3 -m venv ~/.myelin-venv
+source ~/.myelin-venv/bin/activate
+```
+This creates `~/.myelin-venv/` (e.g., `/home/<you>/.myelin-venv/` or `/Users/<you>/.myelin-venv/`).
+
+> You should see `(.myelin-venv)` in your terminal prompt after activating. If you don't, the venv wasn't created — check the path.
+
+#### Step 2 — Install uv and Myelin inside the venv
+
+With the venv **activated** (from Step 1):
+
+```bash
+pip install uv
+uv pip install git+https://github.com/et-do/myelin.git
 ```
 
-### Connect to Your AI Agent
+#### Step 3 — Verify the installation
 
-Myelin runs as a local [MCP](https://modelcontextprotocol.io/) server over stdio. Your AI tool manages the server process — you don't need to run it manually.
+Still in the activated venv:
 
-<details>
-<summary><strong>VS Code / GitHub Copilot</strong></summary>
+```bash
+uv run myelin status
+```
 
-Add to `.vscode/mcp.json` in your project (or user-level `settings.json` for cross-project):
+On the first run, this downloads ~500 MB of embedding models. It may take a minute. You should see JSON output like:
+
+```json
+{
+  "memory_count": 0,
+  "summary_count": 0,
+  "consistent": true,
+  "data_dir": "~/.myelin",
+  "embedding_model": "all-MiniLM-L6-v2"
+}
+```
+
+#### Step 4 — Configure your AI tool
+
+Add Myelin as an MCP server so your agent can use it. See [Setup Guides](#setup-guides) below for full details.
+
+**VS Code (user-level — recommended):**
+
+Open Command Palette (`Ctrl+Shift+P`) → `Preferences: Open User Settings (JSON)` → click the MCP icon (the Configure Tools button in the chat input bar), or manually edit:
+- **Windows:** `C:\Users\<you>\AppData\Roaming\Code\User\mcp.json`
+- **macOS/Linux:** `~/.config/Code/User/mcp.json`
 
 ```json
 {
@@ -84,49 +140,52 @@ Add to `.vscode/mcp.json` in your project (or user-level `settings.json` for cro
 }
 ```
 
-</details>
+> **Important (Windows):** VS Code resolves `"command": "uv"` by searching your PATH. Make sure `uv.exe` is findable — either by adding the venv's `Scripts` folder to your PATH (Step 5), or by using the full path in the config:
+> ```json
+> "command": "C:\\Users\\<you>\\.myelin-venv\\Scripts\\uv.exe"
+> ```
 
-<details>
-<summary><strong>Claude Desktop</strong></summary>
+**Claude Desktop:** Add the same `command`/`args` to your `claude_desktop_config.json`.
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json` (macOS) or `%APPDATA%\Claude\claude_desktop_config.json` (Windows):
+#### Step 5 — (Recommended) Add the venv to your PATH
 
-```json
-{
-  "mcpServers": {
-    "myelin": {
-      "command": "uvx",
-      "args": ["--from", "git+https://github.com/et-do/myelin.git", "myelin", "serve"]
-    }
-  }
-}
-```
+This lets VS Code find `uv.exe` without needing a full path in the MCP config.
 
-</details>
+**Windows:**
+1. Press `Win + S`, type **environment variables**, select **Edit the system environment variables**.
+2. Click **Environment Variables…**
+3. Under **User variables**, select `Path` → **Edit…** → **New**:
+   ```
+   %USERPROFILE%\.myelin-venv\Scripts
+   ```
+   > `%USERPROFILE%` is correct here — the Windows Environment Variables UI uses CMD syntax, not PowerShell.
+4. Click **OK** on all dialogs. **Restart VS Code** for the change to take effect.
 
-<details>
-<summary><strong>Cursor</strong></summary>
-
-Add to `.cursor/mcp.json` in your project:
-
-```json
-{
-  "mcpServers": {
-    "myelin": {
-      "command": "uv",
-      "args": ["run", "myelin", "serve"]
-    }
-  }
-}
-```
-
-</details>
-
-### Verify
-
+**macOS/Linux:** Add to your shell profile (`~/.bashrc`, `~/.zshrc`, etc.):
 ```bash
-uv run myelin status
+export PATH="$HOME/.myelin-venv/bin:$PATH"
 ```
+
+#### Step 6 — Restart and confirm
+
+1. **Restart VS Code** (or reload the window: `Ctrl+Shift+P` → `Developer: Reload Window`).
+2. Open the **Output** panel (`Ctrl+Shift+U`), select **MCP: myelin** from the dropdown. You should see it start and discover tools:
+
+<p align="center">
+  <img src="img/vscode-mcp-output.png" alt="MCP output showing Myelin server starting and discovering 9 tools" width="700"/>
+</p>
+
+3. Click the **Configure Tools** button (filter icon) in the Chat input bar to verify Myelin's tools are listed:
+
+<p align="center">
+  <img src="img/vscode-configure-tools.png" alt="Configure Tools button in VS Code Chat" width="400"/>
+</p>
+
+<p align="center">
+  <img src="img/vscode-myelin-tools.png" alt="Myelin tools listed in VS Code Configure Tools" width="600"/>
+</p>
+
+4. Ask your agent: *"Check myelin status"* — it should call the `status` tool and return memory counts.
 
 ---
 
@@ -138,37 +197,9 @@ Myelin stores all data in a single directory (`~/.myelin` by default). How you d
 
 **Best for:** Solo developers who want one memory across all projects and agents.
 
-This is the default. Install once, configure your AI tool at the user level, and every project shares the same memory.
+This is the default setup. Follow the [Quick Start Install](#install) steps above — they set up user-level config by default.
 
-**1. Install globally (or in a shared venv):**
-
-```bash
-uv pip install git+https://github.com/et-do/myelin.git
-```
-
-**2. Add MCP config at the user level** (not per-project):
-
-- **VS Code:** Add to your user-level `mcp.json` (recommended by VS Code for MCP servers):
-
-  - Open Command Palette (`Ctrl+Shift+P`) → "Preferences: Open User Settings (JSON)"
-  - Click the "Open user mcp.json" button (or manually edit the file at
-    `C:\Users\<you>\AppData\Roaming\Code\User\mcp.json` on Windows,
-    `~/.config/Code/User/mcp.json` on Linux/macOS)
-
-  ```json
-  {
-    "servers": {
-      "myelin": {
-        "command": "uv",
-        "args": ["run", "myelin", "serve"]
-      }
-    }
-  }
-  ```
-
-- **Claude Desktop:** Add to your `claude_desktop_config.json` (see Quick Start above).
-
-**3. That's it.** All projects and agents share `~/.myelin/`. Use `project` metadata when storing to keep knowledge organized:
+All projects and agents share `~/.myelin/`. Use `project` metadata when storing to keep knowledge organized:
 
 ```
 "Store this as project=backend, scope=auth"
@@ -521,7 +552,12 @@ uv run myelin import out.json  # Import memories from JSON
 
 ### Data Storage
 
-All data lives in `~/.myelin/` (configurable via `MYELIN_DATA_DIR`):
+All data lives in `~/.myelin/` (configurable via `MYELIN_DATA_DIR`). The full path depends on your OS:
+- **Windows:** `C:\Users\<you>\.myelin\`
+- **macOS:** `/Users/<you>/.myelin/`
+- **Linux:** `/home/<you>/.myelin/`
+
+Contents:
 
 | File | Purpose |
 |---|---|
@@ -531,6 +567,76 @@ All data lives in `~/.myelin/` (configurable via `MYELIN_DATA_DIR`):
 | `thalamus.db` | Pinned memories and recency tracking |
 
 SQLite files use WAL mode for concurrent read performance.
+
+### Inspecting Your Data
+
+You can inspect and validate the contents of your Myelin databases directly.
+
+#### Quick health check
+
+```bash
+uv run myelin status
+```
+
+Returns memory count, summary count, consistency status, data directory, and model info.
+
+#### Export all memories to readable JSON
+
+```bash
+uv run myelin export memories.json
+```
+
+This dumps every memory with its full metadata (content, timestamps, access counts, memory type, project, scope, tags, etc.) into a single JSON file you can open in any editor.
+
+#### Browse SQLite databases directly
+
+The `.db` files are standard SQLite databases. You can open them with any SQLite tool:
+
+```bash
+# Hebbian co-access links (which memories are associated)
+sqlite3 ~/.myelin/hebbian.db ".tables" 
+sqlite3 ~/.myelin/hebbian.db "SELECT * FROM hebbian_links ORDER BY weight DESC LIMIT 10;"
+
+# Semantic network (entities and relationships built by consolidation)
+sqlite3 ~/.myelin/neocortex.db ".tables"
+sqlite3 ~/.myelin/neocortex.db "SELECT * FROM entities LIMIT 10;"
+sqlite3 ~/.myelin/neocortex.db "SELECT * FROM edges ORDER BY weight DESC LIMIT 10;"
+
+# Pinned memories and recency tracking
+sqlite3 ~/.myelin/thalamus.db ".tables"
+sqlite3 ~/.myelin/thalamus.db "SELECT * FROM pinned;"
+sqlite3 ~/.myelin/thalamus.db "SELECT * FROM recency ORDER BY last_accessed DESC LIMIT 10;"
+```
+
+> **Tip:** On Windows, you can install `sqlite3` via `winget install SQLite.SQLite` or use [DB Browser for SQLite](https://sqlitebrowser.org/) for a GUI. The `sqlite-utils` package (included with Myelin) also works: `sqlite-utils tables ~/.myelin/hebbian.db` and `sqlite-utils rows ~/.myelin/hebbian.db hebbian_links --limit 10`.
+
+#### Browse the ChromaDB vector store
+
+ChromaDB stores embeddings and metadata in `~/.myelin/chroma/`. You can query it programmatically:
+
+```python
+import chromadb
+client = chromadb.PersistentClient(path="~/.myelin/chroma")
+collection = client.get_collection("memories")
+
+# Count all memories
+print(collection.count())
+
+# Peek at the first 5 memories
+results = collection.peek(limit=5)
+for doc, meta in zip(results["documents"], results["metadatas"]):
+    print(meta.get("memory_type"), "-", doc[:100])
+```
+
+#### What to look for
+
+| Check | What It Tells You |
+|---|---|
+| `myelin status` shows `consistent: true` | Embedding count matches metadata count — no orphans |
+| `myelin export` has entries with your project name | Memories are being tagged correctly |
+| `hebbian.db` has rows | Co-recall learning is active (fires after multiple recalls) |
+| `neocortex.db` has entities/edges | Consolidation has run and built the semantic network |
+| `thalamus.db` pinned table has rows | You have pinned memories that prepend to every recall |
 
 ---
 
