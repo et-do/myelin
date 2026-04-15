@@ -356,9 +356,9 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 
 | Metric | Myelin | MemPalace hybrid v5 |
 |--------|--------|---------------------|
-| **R@5** | **74.1%** | — |
-| **R@10** | **83.6%** | 88.9% |
-| **R@20** | **83.6%** | — |
+| **R@5** | **88.9%** | — |
+| **R@10** | **95.1%** | 88.9% |
+| **R@20** | **95.1%** | — |
 
 ### Methodology
 
@@ -594,7 +594,7 @@ The `.db` files are standard SQLite databases. You can open them with any SQLite
 
 ```bash
 # Hebbian co-access links (which memories are associated)
-sqlite3 ~/.myelin/hebbian.db ".tables" 
+sqlite3 ~/.myelin/hebbian.db ".tables"
 sqlite3 ~/.myelin/hebbian.db "SELECT * FROM hebbian_links ORDER BY weight DESC LIMIT 10;"
 
 # Semantic network (entities and relationships built by consolidation)
