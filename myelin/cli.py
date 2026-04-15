@@ -5,27 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import logging
-import os
 import sys
 from typing import Any
 
-# Suppress noisy model-loading warnings before any ML imports
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
-os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-for _ln in (
-    "transformers.modeling_utils",
-    "safetensors",
-    "sentence_transformers",
-    "sentence_transformers.models",
-    "sentence_transformers.cross_encoder",
-    "huggingface_hub",
-    "huggingface_hub.utils._http",
-):
-    logging.getLogger(_ln).setLevel(logging.ERROR)
+from .config import settings
+from .log import setup_logging, suppress_noisy_loggers
 
-from .config import settings  # noqa: E402
-from .log import setup_logging  # noqa: E402
+suppress_noisy_loggers()
 
 
 def cmd_status(_args: argparse.Namespace) -> None:

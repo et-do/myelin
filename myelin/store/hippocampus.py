@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import logging
 import math
-import os
 import threading
 from datetime import UTC, datetime
 from typing import Any
@@ -21,6 +20,7 @@ import chromadb
 from sentence_transformers import SentenceTransformer
 
 from ..config import MyelinSettings, settings
+from ..log import suppress_noisy_loggers
 from ..models import Memory, MemoryMetadata, RecallResult
 from ..recall.query_planner import plan as plan_query
 from ..recall.time_cells import (
@@ -42,23 +42,7 @@ from .neocortex import SemanticNetwork
 from .perirhinal import SummaryIndex, summarise
 from .prefrontal import classify_memory_type
 
-# Suppress harmless warnings during model loading:
-# - "position_ids UNEXPECTED" — buffer exists in older MiniLM checkpoints
-#   but was removed from the model class in newer transformers.
-# - "layers were not sharded" — expected on CPU/single-GPU, not multi-GPU.
-# - Loading progress bar — noise in server/benchmark output.
-os.environ.setdefault("TRANSFORMERS_VERBOSITY", "error")
-os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
-os.environ.setdefault("HF_HUB_DISABLE_TELEMETRY", "1")
-for _logger_name in (
-    "transformers.modeling_utils",
-    "safetensors",
-    "sentence_transformers.models",
-    "sentence_transformers",
-    "huggingface_hub",
-    "huggingface_hub.utils._http",
-):
-    logging.getLogger(_logger_name).setLevel(logging.ERROR)
+suppress_noisy_loggers()
 
 logger = logging.getLogger(__name__)
 
@@ -391,7 +375,7 @@ class Hippocampus:
                         expanded_query = f"{query} {expansion}"
                         r3 = _probe(expanded_query, pool_n)
                 except Exception:
-                    logger.debug("Spreading activation probe failed", exc_info=True)
+                    logger.warning("Spreading activation probe failed", exc_info=True)
 
             # Merge: collect unique candidates across all probes,
             # keeping the highest per-probe score as a composite signal.
@@ -502,7 +486,7 @@ class Hippocampus:
                                     r.score *= 1.0 + boost * min(act_score, 2.0)
                         recall_results.sort(key=lambda r: r.score, reverse=True)
                 except Exception:
-                    logger.debug("Spreading activation boost failed", exc_info=True)
+                    logger.warning("Spreading activation boost failed", exc_info=True)
 
         # Final lateral inhibition: enforce session diversity on the
         # merged pool.  Per-probe lateral_k was already applied, but
@@ -646,7 +630,7 @@ class Hippocampus:
                     )
                     results = self._merge_results(results, temporal_results, n_retrieve)
                 except Exception:
-                    logger.debug("Temporal recall filter failed", exc_info=True)
+                    logger.warning("Temporal recall filter failed", exc_info=True)
 
         _docs = results["documents"]
         _metas = results["metadatas"]
