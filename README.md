@@ -15,7 +15,7 @@
 
   <p>
     <a href="https://github.com/et-do/myelin/blob/main/LICENSE"><img src="https://img.shields.io/github/license/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="License"></a>
-    <a href="https://pypi.org/project/myelin/"><img src="https://img.shields.io/pypi/v/myelin?colorA=363a4f&colorB=b7bdf8&label=pypi" alt="PyPI"></a>
+    <a href="https://pypi.org/project/myelin-mcp/"><img src="https://img.shields.io/pypi/v/myelin-mcp?colorA=363a4f&colorB=b7bdf8&label=pypi" alt="PyPI"></a>
     <a href="https://github.com/et-do/myelin/stargazers"><img src="https://img.shields.io/github/stars/et-do/myelin?colorA=363a4f&colorB=b7bdf8&style=flat" alt="Stars"></a>
     <a href="https://github.com/et-do/myelin/issues"><img src="https://img.shields.io/github/issues/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="Issues"></a>
     <a href="https://github.com/et-do/myelin/commits/main"><img src="https://img.shields.io/github/last-commit/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="Last Commit"></a>
@@ -79,11 +79,16 @@
 
 **Option A — uv (recommended, no admin required):**
 
+**macOS / Linux:**
 ```bash
-# Install uv itself — installs to ~/.local/bin, no sudo needed
 curl -LsSf https://astral.sh/uv/install.sh | sh
+uv tool install myelin-mcp
+```
 
-uv tool install myelin
+**Windows (PowerShell):**
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+uv tool install myelin-mcp
 ```
 
 **Option B — pip:**
@@ -91,7 +96,7 @@ uv tool install myelin
 ```bash
 # --user installs to ~/.local/bin (Linux/macOS) or %APPDATA%\Python\...\Scripts (Windows)
 # No admin rights required
-pip install --user myelin
+pip install --user myelin-mcp
 ```
 
 > [!NOTE]
@@ -116,7 +121,7 @@ Add Myelin as an MCP server.
 ```
 
 > [!IMPORTANT]
-> **`myelin` not found by VS Code?** MCP hosts launch in a clean environment and may not inherit your shell `$PATH`. Use the full path (e.g. `~/.local/bin/myelin` on Linux/macOS) or switch to `"command": "uvx"` with `"args": ["myelin", "serve"]` — `uvx` resolves the tool location automatically.
+> **`myelin` not found by VS Code?** MCP hosts launch in a clean environment and may not inherit your shell `$PATH`. Use the full path (e.g. `~/.local/bin/myelin` on Linux/macOS) or switch to `"command": "uvx"` with `"args": ["myelin-mcp", "serve"]` — `uvx` resolves the tool location automatically.
 
 **Claude Desktop** — add the same block to `claude_desktop_config.json`.
 
@@ -182,7 +187,7 @@ Create a `.vscode/mcp.json` in the repo:
 ```
 
 > [!TIP]
-> Use `"command": "uvx"` with `"args": ["myelin", "serve"]` if `myelin` isn't on the PATH in your MCP host's environment.
+> Use `"command": "uvx"` with `"args": ["myelin-mcp", "serve"]` if `myelin` isn't on the PATH in your MCP host's environment.
 
 **2. Decide whether to commit the data:**
 
