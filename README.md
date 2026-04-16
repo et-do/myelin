@@ -100,7 +100,7 @@ pip install --user myelin-mcp
 ```
 
 > [!NOTE]
-> **First run** downloads ~500 MB of embedding models automatically. Verify with `myelin status`.
+> **After installing, run `myelin status` once before opening VS Code.** This downloads ~500 MB of embedding models and pre-warms them so your first tool call is instant. The MCP server starts without waiting for models, but the first `store` or `recall` will be slower if models haven't loaded yet.
 > If `myelin` isn't found, your user bin dir isn't on `$PATH`. Add `~/.local/bin` to your shell profile (Linux/macOS), or find the correct path with `python -m site --user-scripts` (Windows).
 
 ### Configure your AI tool

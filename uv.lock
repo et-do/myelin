@@ -1284,8 +1284,8 @@ wheels = [
 ]
 
 [[package]]
-name = "myelin"
-version = "0.1.1"
+name = "myelin-mcp"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "chromadb" },

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import atexit
 import json
 import logging
 import signal
 import time
-from collections.abc import Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncIterator, Iterator
+from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -28,7 +29,16 @@ from .store import (
     replay,
 )
 
-mcp = FastMCP("myelin")
+
+@asynccontextmanager
+async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
+    """Start model warm-up in the background so initialize responds immediately."""
+    loop = asyncio.get_event_loop()
+    loop.run_in_executor(None, warm_up)
+    yield
+
+
+mcp = FastMCP("myelin", lifespan=_lifespan)
 
 logger = logging.getLogger(__name__)
 
@@ -571,7 +581,6 @@ def main() -> None:
     )
     signal.signal(signal.SIGTERM, _signal_handler)
     atexit.register(shutdown)
-    warm_up()
     mcp.run()
 
 
