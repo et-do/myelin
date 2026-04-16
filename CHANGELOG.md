@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.1.2](https://github.com/et-do/myelin/compare/v0.1.1...v0.1.2) (2026-04-16)
+
+
+### Features
+
+* add memory upsert via store(overwrite=True) ([1a3712f](https://github.com/et-do/myelin/commit/1a3712f94440ba47aad6221636297efc1095bed0))
+* add memory upsert via store(overwrite=True) ([49b146a](https://github.com/et-do/myelin/commit/49b146a4190e9258133d3d8eb2e157bcb6d8660d))
+* add PyPI publishing workflow and polish install docs ([d66faa8](https://github.com/et-do/myelin/commit/d66faa8f33cb277c2346da8585664b43bab6b8da))
+* add PyPI publishing workflow and polish install docs ([3d200b7](https://github.com/et-do/myelin/commit/3d200b7c4a39cc1e831387088e23d13de31693f3))
+
+
+### Bug Fixes
+
+* exclusive process lock on data directory to prevent concurrent c… ([2a9a675](https://github.com/et-do/myelin/commit/2a9a675b9e2ba215ce49a1fc8b467d9eb65f35d4))
+* exclusive process lock on data directory to prevent concurrent corruption ([6ab8930](https://github.com/et-do/myelin/commit/6ab89302612ba68d56a75b290edeca30893df170))
+* improve logging — centralize noise suppression, add operation co… ([dcc0ba9](https://github.com/et-do/myelin/commit/dcc0ba9efdaa3470a49d41dfff789413fa45fc50))
+* improve logging — centralize noise suppression, add operation context, promote failures ([dfb62fa](https://github.com/et-do/myelin/commit/dfb62facd0c7c5e20cddcab89c7cf366a3e0f3fc))
+* rename PyPI package to myelin-mcp to resolve name conflict ([#14](https://github.com/et-do/myelin/issues/14)) ([b9b0a23](https://github.com/et-do/myelin/commit/b9b0a234c0ebf1e14ca162eea4044341f1351d15))
+* update stale DataDirLocked docstring references to DataDirLockedError ([639ef52](https://github.com/et-do/myelin/commit/639ef52d5b95e6eab1ea68c5267c4b9fb564cf3b))
+
+
+### Documentation
+
+* document store overwrite parameter in MCP tools table ([d89aa82](https://github.com/et-do/myelin/commit/d89aa829d2d2625c265d9a9472d1ecd887788681))
+* require squash and merge in contributing workflow ([#13](https://github.com/et-do/myelin/issues/13)) ([ae8fea0](https://github.com/et-do/myelin/commit/ae8fea0a0c8e55b1dbc273f79de4306c844f5e41))
+
 ## [0.1.1](https://github.com/et-do/myelin/compare/v0.1.0...v0.1.1) (2026-04-15)
 
 
