@@ -74,6 +74,9 @@ You never need to manually edit the version number.
 All of these run in CI and should pass before merging:
 
 ```bash
+# Verify uv.lock is in sync with pyproject.toml (run after editing pyproject.toml)
+uv lock --check
+
 # Tests with coverage
 uv run pytest -v --cov=myelin
 
