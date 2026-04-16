@@ -157,6 +157,7 @@ def do_store(
     memory_type: str = "",
     tags: str = "",
     source: str = "",
+    overwrite: bool = False,
 ) -> dict[str, Any]:
     """Store a memory. Returns dict with status."""
     if len(content) > _MAX_CONTENT_CHARS:
@@ -175,7 +176,7 @@ def do_store(
     )
     hc = _get_hippocampus()
     count_before = hc.count()
-    memory = hc.store(content, metadata)
+    memory = hc.store(content, metadata, overwrite=overwrite)
     if memory is None:
         logger.info(
             "store rejected: too short or near-duplicate",
@@ -183,8 +184,10 @@ def do_store(
         )
         return {"status": "rejected", "reason": "too short or near-duplicate"}
     chunks_stored = hc.count() - count_before
+    status = "updated" if memory.replaced_id else "stored"
     logger.info(
-        "stored memory %s (%d chars, %d chunks)",
+        "store %s memory %s (%d chars, %d chunks)",
+        status,
         memory.id,
         len(content),
         max(chunks_stored, 1),
@@ -193,9 +196,12 @@ def do_store(
             "project": project,
             "scope": scope,
             "chunks": max(chunks_stored, 1),
+            "replaced_id": memory.replaced_id,
         },
     )
-    result: dict[str, Any] = {"id": memory.id, "status": "stored"}
+    result: dict[str, Any] = {"id": memory.id, "status": status}
+    if memory.replaced_id:
+        result["replaced"] = memory.replaced_id
     if chunks_stored > 1:
         result["chunks"] = chunks_stored
 
@@ -370,6 +376,7 @@ def store(
     memory_type: str = "",
     tags: str = "",
     source: str = "",
+    overwrite: bool = False,
 ) -> str:
     """Store a memory with optional context metadata.
 
@@ -381,13 +388,19 @@ def store(
         memory_type: Memory system (episodic/semantic/procedural/prospective).
         tags: Comma-separated tags for categorization.
         source: Which tool stored this ("copilot", "cursor", etc.).
+        overwrite: If True and content is a near-duplicate of an existing
+            memory, replace the old memory instead of rejecting.  The
+            response will include ``"replaced": <old_parent_id>`` and
+            ``"status": "updated"``.
 
     Returns:
         JSON with memory ID on success, or rejection reason.
     """
     with _track("store"):
         return json.dumps(
-            do_store(content, project, language, scope, memory_type, tags, source)
+            do_store(
+                content, project, language, scope, memory_type, tags, source, overwrite
+            )
         )
 
 
@@ -530,6 +543,7 @@ def health() -> str:
 def main() -> None:
     """Run the MCP server (stdio transport)."""
     setup_logging(level=getattr(logging, _cfg.log_level))
+
     logger.info(
         "starting myelin server",
         extra={

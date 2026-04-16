@@ -78,6 +78,9 @@ class Memory(BaseModel):
     created_at: datetime = Field(default_factory=_utcnow)
     last_accessed: datetime = Field(default_factory=_utcnow)
     access_count: int = 0
+    # Set by store(overwrite=True) when an existing memory was replaced.
+    # Not persisted to storage; only present on the return value of store().
+    replaced_id: str | None = Field(default=None, exclude=True)
 
 
 class RecallResult(BaseModel):

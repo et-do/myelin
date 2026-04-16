@@ -224,3 +224,108 @@ class TestChunking:
         results = hc.recall("database choice")
         assert len(results) > 0
         assert "PostgreSQL" in results[0].memory.content
+
+
+class TestUpsert:
+    """Tests for store(overwrite=True) — replace near-duplicate memories."""
+
+    def test_overwrite_replaces_near_duplicate(self, hippocampus: Hippocampus) -> None:
+        original = hippocampus.store("The auth service uses JWT tokens for sessions")
+        assert original is not None
+        assert hippocampus.count() == 1
+
+        updated = hippocampus.store(
+            "The auth service uses JWT tokens for sessions",
+            overwrite=True,
+        )
+        assert updated is not None
+        assert hippocampus.count() == 1
+        assert updated.replaced_id == original.id
+
+    def test_overwrite_false_still_rejects_duplicate(
+        self, hippocampus: Hippocampus
+    ) -> None:
+        hippocampus.store("The auth service uses JWT tokens for sessions")
+        dup = hippocampus.store(
+            "The auth service uses JWT tokens for sessions",
+            overwrite=False,
+        )
+        assert dup is None
+        assert hippocampus.count() == 1
+
+    def test_overwrite_stores_new_content(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        cfg = MyelinSettings(
+            data_dir=Path(str(tmp_path)) / ".myelin",
+            dedup_similarity_threshold=0.5,
+        )
+        hc = Hippocampus(cfg=cfg)
+        hc.store("The auth service uses JWT tokens for sessions with HS256 signing")
+        updated = hc.store(
+            "The auth service uses JWT tokens for sessions with RS256 signing",
+            overwrite=True,
+        )
+        assert updated is not None
+        assert "RS256" in updated.content
+        assert updated.replaced_id is not None
+        assert hc.count() == 1
+
+    def test_overwrite_no_existing_stores_normally(
+        self, hippocampus: Hippocampus
+    ) -> None:
+        memory = hippocampus.store(
+            "Completely new memory with no existing near-duplicate",
+            overwrite=True,
+        )
+        assert memory is not None
+        assert memory.replaced_id is None
+        assert hippocampus.count() == 1
+
+    def test_overwrite_does_not_replace_on_short_content(
+        self, hippocampus: Hippocampus
+    ) -> None:
+        result = hippocampus.store("hi", overwrite=True)
+        assert result is None
+        assert hippocampus.count() == 0
+
+    def test_replaced_id_not_set_on_normal_store(
+        self, hippocampus: Hippocampus
+    ) -> None:
+        memory = hippocampus.store("A distinct memory about database indexing")
+        assert memory is not None
+        assert memory.replaced_id is None
+
+    def test_overwrite_multi_chunk_replaces_all_chunks(self, tmp_path: object) -> None:
+        """Upserting long content should remove all chunks of the old memory."""
+        from pathlib import Path
+
+        cfg = MyelinSettings(
+            data_dir=Path(str(tmp_path)) / ".myelin",
+            chunk_max_chars=200,
+            chunk_overlap_chars=50,
+            # Lower threshold so the full-content embedding query against
+            # individual chunks still triggers the overwrite path.
+            dedup_similarity_threshold=0.5,
+        )
+        hc = Hippocampus(cfg=cfg)
+
+        turns = []
+        for i in range(8):
+            turns.append(f"user: Question {i} about JWT authentication tokens auth")
+            turns.append(f"assistant: Answer {i} about JWT refresh token rotation")
+        original_text = "\n".join(turns)
+
+        hc.store(original_text)
+        original_count = hc.count()
+        assert original_count > 1  # multiple chunks
+
+        # Slightly modified but semantically near-duplicate
+        turns[-1] = "assistant: Updated answer about JWT rotation with RS256 signing"
+        updated_text = "\n".join(turns)
+
+        first_chunk = hc.store(updated_text, overwrite=True)
+        assert first_chunk is not None
+        assert first_chunk.replaced_id is not None
+        # All original chunks replaced; only new chunks remain
+        assert hc.count() <= original_count
