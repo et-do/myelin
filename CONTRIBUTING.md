@@ -27,7 +27,7 @@ We use a trunk-based workflow. All work goes through PRs into `main`.
 2. **Use conventional commits** (see below)
 3. **Open a PR** into `main`
 4. CI runs lint, tests, type checking, and dependency review
-5. Merge when all checks pass
+5. **Squash and merge** when all checks pass (keeps `main` history clean and avoids duplicate changelog entries)
 
 ### Conventional Commits
 
