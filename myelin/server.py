@@ -16,6 +16,7 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 
 from .config import MyelinSettings, settings
+from .lock import DataDirLock, DataDirLockedError
 from .log import request_id, setup_logging
 from .models import MemoryMetadata, RecallResult
 from .recall import HebbianTracker, find_stale
@@ -33,6 +34,7 @@ logger = logging.getLogger(__name__)
 
 # Lazy singletons — initialized on first tool call
 _hippocampus: Hippocampus | None = None
+_data_dir_lock: DataDirLock | None = None
 _hebbian: HebbianTracker | None = None
 _neocortex: SemanticNetwork | None = None
 _thalamus: ThalamicBuffer | None = None
@@ -100,7 +102,7 @@ def warm_up() -> None:
 
 def shutdown() -> None:
     """Close all initialized stores gracefully."""
-    global _hippocampus, _hebbian, _neocortex, _thalamus
+    global _hippocampus, _hebbian, _neocortex, _thalamus, _data_dir_lock
     logger.info("shutting down")
     if _hippocampus is not None:
         if _hippocampus._reranker is not None:
@@ -115,6 +117,9 @@ def shutdown() -> None:
     if _thalamus is not None:
         _thalamus.close()
         _thalamus = None
+    if _data_dir_lock is not None:
+        _data_dir_lock.release()
+        _data_dir_lock = None
 
 
 def _signal_handler(_signum: int, _frame: Any) -> None:
@@ -529,7 +534,19 @@ def health() -> str:
 
 def main() -> None:
     """Run the MCP server (stdio transport)."""
+    global _data_dir_lock
     setup_logging(level=getattr(logging, _cfg.log_level))
+
+    # Acquire exclusive lock on the data directory before touching any store.
+    # This prevents two MCP processes from corrupting shared state.
+    _cfg.ensure_dirs()
+    _data_dir_lock = DataDirLock(_cfg.data_dir)
+    try:
+        _data_dir_lock.acquire()
+    except DataDirLockedError as exc:
+        logger.error("data directory locked: %s", exc)
+        raise SystemExit(1) from exc
+
     logger.info(
         "starting myelin server",
         extra={
