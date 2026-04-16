@@ -31,7 +31,7 @@ from .store import (
 
 
 @asynccontextmanager
-async def _lifespan(_: FastMCP) -> AsyncIterator[None]:  # type: ignore[type-arg]
+async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
     """Start model warm-up in the background so initialize responds immediately."""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, warm_up)
