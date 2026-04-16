@@ -1,5 +1,5 @@
 [project]
-name = "myelin"
+name = "myelin-mcp"
 version = "0.1.1"
 description = "Neuromorphic long-term AI memory system — brain-inspired context for AI agents"
 readme = "README.md"
@@ -71,6 +71,9 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["myelin"]
 
 [build-system]
 requires = ["hatchling"]
