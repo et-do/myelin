@@ -129,35 +129,55 @@ class Hippocampus:
         self,
         content: str,
         metadata: MemoryMetadata | None = None,
+        overwrite: bool = False,
     ) -> Memory | None:
         """Embed and store a memory, chunking long content automatically.
 
         Long content is split into focused segments (pattern separation)
         so each embedding stays within the model's attention window.
         Returns the first chunk's Memory, or None if the gate rejects it.
+
+        When *overwrite* is True and content is a near-duplicate of an
+        existing memory, the old memory (all its chunks and gists) is
+        deleted before the new content is stored.  The returned Memory
+        will have ``replaced_id`` set to the parent_id of the deleted
+        memory so callers can surface the replacement to users.
         """
         with self._lock:
-            return self._store_impl(content, metadata)
+            return self._store_impl(content, metadata, overwrite=overwrite)
 
     def _store_impl(
         self,
         content: str,
         metadata: MemoryMetadata | None = None,
+        overwrite: bool = False,
     ) -> Memory | None:
         # Gate check on full content (dedup + length)
         embedding = self._embedder.encode(content).tolist()
 
         existing_sim: list[float] = []
+        nearest_parent_id: str | None = None
         if self._collection.count() > 0:
             hits = self._collection.query(
-                query_embeddings=[embedding], n_results=1, include=["distances"]
+                query_embeddings=[embedding],
+                n_results=1,
+                include=["distances", "metadatas"],
             )
             if hits["distances"] and hits["distances"][0]:
                 existing_sim = [1.0 - d for d in hits["distances"][0]]
+            if overwrite and hits["metadatas"] and hits["metadatas"][0]:
+                nearest_meta = hits["metadatas"][0][0]
+                nearest_parent_id = str(nearest_meta.get("parent_id", "")) or None
 
-        ok, _reason = passes_gate(content, existing_sim, cfg=self._settings)
+        ok, reason = passes_gate(content, existing_sim, cfg=self._settings)
+        replaced_id: str | None = None
         if not ok:
-            return None
+            if overwrite and reason.startswith("near-duplicate") and nearest_parent_id:
+                # Remove the stale memory so the replacement can be stored.
+                self._delete_memory_by_parent_id(nearest_parent_id)
+                replaced_id = nearest_parent_id
+            else:
+                return None
 
         meta = metadata or MemoryMetadata()
 
@@ -195,6 +215,8 @@ class Hippocampus:
                     self._summaries.add(memory.id, gist)
             except Exception:
                 logger.warning("Gist indexing failed for %s", memory.id, exc_info=True)
+            if replaced_id:
+                memory.replaced_id = replaced_id
             return memory
 
         # Long content — store each chunk with shared parent_id
@@ -254,6 +276,8 @@ class Hippocampus:
                 exc_info=True,
             )
 
+        if first_memory is not None and replaced_id:
+            first_memory.replaced_id = replaced_id
         return first_memory
 
     # ------------------------------------------------------------------
@@ -828,6 +852,31 @@ class Hippocampus:
     # ------------------------------------------------------------------
     # Forget
     # ------------------------------------------------------------------
+
+    def _delete_memory_by_parent_id(self, parent_id: str) -> None:
+        """Delete all chunks and gists belonging to parent_id.
+
+        Caller must hold self._lock.  Used by the upsert path to purge the
+        old memory before writing the replacement.
+        """
+        # Retrieve all chunk IDs that share this parent_id
+        result = self._collection.get(
+            where={"parent_id": parent_id},
+            include=[],  # IDs only
+        )
+        chunk_ids: list[str] = result["ids"] if result["ids"] else []
+
+        if chunk_ids:
+            self._collection.delete(ids=chunk_ids)
+
+        # Delete the session-level gist and any per-chunk gists
+        gist_ids = [f"summary_{parent_id}"] + [
+            f"summary_{cid}" for cid in chunk_ids if cid != parent_id
+        ]
+        try:
+            self._summaries._collection.delete(ids=gist_ids)
+        except Exception:
+            pass  # Gist deletion is best-effort; chunks are already gone
 
     def forget(self, memory_id: str) -> bool:
         """Remove a memory by ID."""

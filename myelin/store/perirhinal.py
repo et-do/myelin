@@ -250,5 +250,12 @@ class SummaryIndex:
                 out.append((pid, 1.0 - dist))
         return out
 
+    def delete(self, parent_id: str) -> None:
+        """Delete the summary entry for a parent_id, if it exists."""
+        try:
+            self._collection.delete(ids=[f"summary_{parent_id}"])
+        except Exception:
+            pass  # ChromaDB silently ignores missing IDs; protect against edge cases
+
     def count(self) -> int:
         return int(self._collection.count())
