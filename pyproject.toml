@@ -72,6 +72,9 @@ warn_return_any = true
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
 
+[tool.hatch.build.targets.wheel]
+packages = ["myelin"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
