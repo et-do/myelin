@@ -2,4 +2,4 @@
 
 from importlib.metadata import version
 
-__version__ = version("myelin")
+__version__ = version("myelin-mcp")
