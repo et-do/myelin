@@ -2,7 +2,7 @@
 
 Only one MCP server process may open a given data directory at a time.
 A second process that tries to acquire the lock will raise
-``DataDirLocked``, giving the user a clear error message rather than
+``DataDirLockedError``, giving the user a clear error message rather than
 silent data corruption.
 
 Implementation
@@ -43,7 +43,7 @@ class DataDirLock:
     Or acquire/release manually::
 
         lock = DataDirLock(data_dir)
-        lock.acquire()   # raises DataDirLocked if already taken
+        lock.acquire()   # raises DataDirLockedError if already taken
         ...
         lock.release()
     """
