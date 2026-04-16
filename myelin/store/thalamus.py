@@ -60,6 +60,7 @@ class ThalamicBuffer:
         self._settings = cfg or settings
         path = db_path or (self._settings.data_dir / "thalamus.db")
         self.db = sqlite_utils.Database(str(path))
+        self.db.execute("PRAGMA journal_mode=WAL")
         self._ensure_tables()
         self._recency: OrderedDict[str, float] = OrderedDict()
 
