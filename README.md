@@ -653,7 +653,7 @@ uv run myelin import out.json  # Import memories from JSON
 
 | Tool | Description |
 |---|---|
-| `store` | Encode a memory with context metadata (auto-classifies type, auto-chunks, 500K char limit) |
+| `store` | Encode a memory with context metadata (auto-classifies type, auto-chunks, 500K char limit). Pass `overwrite=true` to replace a near-duplicate instead of rejecting. |
 | `recall` | Retrieve by semantic similarity (auto-inferred filters, multi-probe, Hebbian boost, 10K char limit) |
 | `forget` | Remove a specific memory by ID |
 | `pin_memory` | Pin a memory — always included in recall results |
