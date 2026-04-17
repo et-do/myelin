@@ -1,9 +1,12 @@
-"""Process-level exclusive lock for a Myelin data directory.
+"""Per-process exclusive lock on a Myelin data directory.
 
-Only one MCP server process may open a given data directory at a time.
-A second process that tries to acquire the lock will raise
-``DataDirLockedError``, giving the user a clear error message rather than
-silent data corruption.
+Available as a utility for callers that need to prevent concurrent writes
+(e.g., a batch-import script that wants sole ownership while importing a
+large snapshot).  The MCP server itself does **not** acquire this lock on
+startup: multiple ``myelin serve`` processes may open the same data
+directory simultaneously.  Write safety relies on SQLite's WAL mode,
+which serialises concurrent writers at the database level and allows
+unlimited concurrent readers.
 
 Implementation
 --------------
@@ -15,9 +18,6 @@ neocortex.db, hebbian.db, thalamus.db).
   automatically by the OS when the process exits, even on crash.
 - **Windows**: ``msvcrt.locking`` on a byte of the file — also released
   on process death.
-
-The lock is acquired in ``server.main()`` before any store is
-initialised and released on clean shutdown via ``atexit``.
 """
 
 from __future__ import annotations
