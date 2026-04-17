@@ -7,6 +7,7 @@ import atexit
 import json
 import logging
 import signal
+import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -42,6 +43,7 @@ mcp = FastMCP("myelin", lifespan=_lifespan)
 logger = logging.getLogger(__name__)
 
 # Lazy singletons — initialized on first tool call
+_init_lock = threading.Lock()
 _hippocampus: Hippocampus | None = None
 _hebbian: HebbianTracker | None = None
 _neocortex: SemanticNetwork | None = None
@@ -52,7 +54,8 @@ _store_count: int = 0
 
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
-    global _cfg, _hippocampus, _hebbian, _neocortex, _thalamus, _store_count
+    global _cfg, _hippocampus, _hebbian, _neocortex
+    global _thalamus, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
@@ -69,13 +72,14 @@ def configure(cfg: MyelinSettings) -> None:
 
 def _get_hippocampus() -> Hippocampus:
     global _hippocampus
-    if _hippocampus is None:
-        reranker = Neocortex(model_name=_cfg.cross_encoder_model)
-        _hippocampus = Hippocampus(
-            cfg=_cfg,
-            reranker=reranker,
-            semantic_network=_get_neocortex(),
-        )
+    with _init_lock:
+        if _hippocampus is None:
+            reranker = Neocortex(model_name=_cfg.cross_encoder_model)
+            _hippocampus = Hippocampus(
+                cfg=_cfg,
+                reranker=reranker,
+                semantic_network=_get_neocortex(),
+            )
     return _hippocampus
 
 

@@ -80,6 +80,12 @@ uv lock --check
 # Tests with coverage
 uv run pytest -v --cov=myelin
 
+# Skip slow MCP integration tests (spawns a real server subprocess) during local dev
+uv run pytest -v --cov=myelin -m "not integration"
+
+# Run integration tests explicitly
+uv run pytest -m integration -v
+
 # Linting
 uv run ruff check .
 uv run ruff format --diff .
