@@ -131,3 +131,37 @@ class TestDataDirLockExclusion:
                 time.sleep(0.05)
         else:
             pytest.fail("Lock was not released after child process death")
+
+
+class TestDataDirLockOSError:
+    def test_acquire_raises_on_open_failure(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """DataDirLockedError is raised when os.open fails (e.g. permission error)."""
+        from unittest.mock import patch
+
+        from myelin.lock import DataDirLock, DataDirLockedError
+
+        with patch("os.open", side_effect=OSError("permission denied")):
+            lock = DataDirLock(tmp_path)
+            with pytest.raises(DataDirLockedError, match="Cannot open lock file"):
+                lock.acquire()
+
+
+class TestDataDirLockContextManager:
+    def test_context_manager_acquires_and_releases(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        from myelin.lock import DataDirLock
+
+        with DataDirLock(tmp_path) as lock:
+            assert lock._fd is not None
+        assert lock._fd is None
+
+    def test_release_is_idempotent(self, tmp_path: pytest.TempPathFactory) -> None:
+        from myelin.lock import DataDirLock
+
+        lock = DataDirLock(tmp_path)
+        lock.acquire()
+        lock.release()
+        lock.release()  # second release should not raise

@@ -7,6 +7,7 @@ import atexit
 import json
 import logging
 import signal
+import threading
 import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -29,13 +30,41 @@ from .store import (
     replay,
 )
 
+_store_queue: asyncio.Queue[dict[str, Any] | None] | None = None
+_QUEUE_MAX = 500
+
+
+async def _queue_worker() -> None:
+    """Drain the async store queue, running each store in a thread executor."""
+    loop = asyncio.get_running_loop()
+    while True:
+        assert _store_queue is not None
+        item = await _store_queue.get()
+        if item is None:  # shutdown sentinel
+            _store_queue.task_done()
+            break
+        try:
+            await loop.run_in_executor(None, lambda i=item: do_store(**i))
+        except Exception:
+            logger.exception("async store worker failed")
+        finally:
+            _store_queue.task_done()
+
 
 @asynccontextmanager
 async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
-    """Start model warm-up in the background so initialize responds immediately."""
+    """Start model warm-up and async store worker in the background."""
+    global _store_queue
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, warm_up)
-    yield
+    _store_queue = asyncio.Queue(maxsize=_QUEUE_MAX)
+    worker = asyncio.create_task(_queue_worker())
+    try:
+        yield
+    finally:
+        await _store_queue.put(None)  # drain remaining items then stop
+        await worker
+        _store_queue = None
 
 
 mcp = FastMCP("myelin", lifespan=_lifespan)
@@ -43,6 +72,7 @@ mcp = FastMCP("myelin", lifespan=_lifespan)
 logger = logging.getLogger(__name__)
 
 # Lazy singletons — initialized on first tool call
+_init_lock = threading.Lock()
 _hippocampus: Hippocampus | None = None
 _data_dir_lock: DataDirLock | None = None
 _hebbian: HebbianTracker | None = None
@@ -54,7 +84,8 @@ _store_count: int = 0
 
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
-    global _cfg, _hippocampus, _hebbian, _neocortex, _thalamus, _store_count
+    global _cfg, _hippocampus, _hebbian, _neocortex
+    global _thalamus, _store_count, _store_queue
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
@@ -67,17 +98,19 @@ def configure(cfg: MyelinSettings) -> None:
     _neocortex = None
     _thalamus = None
     _store_count = 0
+    _store_queue = None
 
 
 def _get_hippocampus() -> Hippocampus:
     global _hippocampus
-    if _hippocampus is None:
-        reranker = Neocortex(model_name=_cfg.cross_encoder_model)
-        _hippocampus = Hippocampus(
-            cfg=_cfg,
-            reranker=reranker,
-            semantic_network=_get_neocortex(),
-        )
+    with _init_lock:
+        if _hippocampus is None:
+            reranker = Neocortex(model_name=_cfg.cross_encoder_model)
+            _hippocampus = Hippocampus(
+                cfg=_cfg,
+                reranker=reranker,
+                semantic_network=_get_neocortex(),
+            )
     return _hippocampus
 
 
@@ -417,6 +450,58 @@ def store(
                 content, project, language, scope, memory_type, tags, source, overwrite
             )
         )
+
+
+@mcp.tool()
+async def store_background(
+    content: str,
+    project: str = "",
+    language: str = "",
+    scope: str = "",
+    memory_type: str = "",
+    tags: str = "",
+    source: str = "",
+) -> str:
+    """Queue a memory to be stored in the background — returns immediately.
+
+    Identical to ``store`` but fire-and-forget: the embedding and disk write
+    happen asynchronously so the tool responds in microseconds.  Use this
+    when throughput matters more than confirmation (e.g. streaming telemetry,
+    high-frequency observations).  The response does **not** include the
+    memory ID because it has not been assigned yet.
+
+    Args:
+        content: The information to remember.
+        project: Cortical region — project name for scoped retrieval.
+        language: Programming language context.
+        scope: Engram cluster — domain scope (e.g. "auth", "database").
+        memory_type: Memory system (episodic/semantic/procedural/prospective).
+        tags: Comma-separated tags for categorization.
+        source: Which tool stored this ("copilot", "cursor", etc.).
+
+    Returns:
+        JSON with ``{"status": "queued", "queue_depth": N}`` or
+        ``{"status": "rejected", "reason": "queue_full"}`` if the
+        bounded queue is at capacity (500 items).
+    """
+    if len(content) > _MAX_CONTENT_CHARS:
+        limit = _MAX_CONTENT_CHARS
+        return json.dumps(
+            {"status": "rejected", "reason": f"content exceeds {limit} char limit"}
+        )
+    if _store_queue is None or _store_queue.full():
+        return json.dumps({"status": "rejected", "reason": "queue_full"})
+    item = {
+        "content": content,
+        "project": project,
+        "language": language,
+        "scope": scope,
+        "memory_type": memory_type,
+        "tags": tags,
+        "source": source,
+    }
+    await _store_queue.put(item)
+    return json.dumps({"status": "queued", "queue_depth": _store_queue.qsize()})
 
 
 @mcp.tool()

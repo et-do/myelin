@@ -190,3 +190,6 @@ benchmarks/locomo/output/
 benchmarks/regression/baseline/
 TODO.md
 benchmarks/longmemeval/cache.py
+# Test artifact protection
+# ChromaDB data leaking out of tmp dirs during bad mocks
+chroma.sqlite3
