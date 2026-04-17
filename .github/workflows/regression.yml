@@ -1,0 +1,78 @@
+name: Regression
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "myelin/**"
+      - "benchmarks/regression/**"
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      # Cache HuggingFace models (sentence-transformers + cross-encoder).
+      # Key is the embedding/cross-encoder model names from config so a model
+      # change invalidates the cache automatically.
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-${{ hashFiles('myelin/config.py') }}
+          restore-keys: hf-models-
+
+      # Cache LongMemEval data (downloaded from HuggingFace).  Key is based on
+      # the download script so a data source change forces a fresh download.
+      - name: Cache LME benchmark data
+        id: lme-cache
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/longmemeval/data
+          key: lme-data-${{ hashFiles('benchmarks/longmemeval/download_data.sh') }}
+
+      - name: Download LongMemEval data
+        if: steps.lme-cache.outputs.cache-hit != 'true'
+        run: bash benchmarks/longmemeval/download_data.sh
+
+      # Rolling baseline cache: key is unique per commit so it never hits on a
+      # fresh push, but restore-keys fall back to the most recent prior entry.
+      # This gives us a stable rolling baseline without a separate storage
+      # solution.  LoCoMo data lives in the repo; no extra download needed.
+      - name: Restore regression baseline
+        id: baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: benchmarks/regression/baseline
+          key: regression-baseline-v1-${{ github.sha }}
+          restore-keys: |
+            regression-baseline-v1-
+
+      - name: Run regression (or create initial baseline)
+        run: |
+          if [ -f benchmarks/regression/baseline/lme_scores.json ]; then
+            echo "Baseline found — running regression check"
+            uv run python -m benchmarks.regression.run
+          else
+            echo "No baseline found — creating initial baseline for next run"
+            uv run python -m benchmarks.regression.run --create-baseline
+          fi
+
+      # Only persist a new baseline when the run passes so a regression on
+      # commit N doesn't become the new "baseline" that masks the issue.
+      - name: Save regression baseline
+        if: success()
+        uses: actions/cache/save@v4
+        with:
+          path: benchmarks/regression/baseline
+          key: regression-baseline-v1-${{ github.sha }}
