@@ -3,7 +3,6 @@
   "release-type": "python",
   "include-component-in-tag": false,
   "bump-minor-pre-major": true,
-  "bump-patch-for-minor-pre-major": true,
   "bootstrap-sha": "de9cc640767b9a3267acc378eadd77126859ef68",
   "packages": {
     ".": {
