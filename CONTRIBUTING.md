@@ -157,3 +157,21 @@ Fast subset (54 LME + 304 LoCoMo questions). Fails if any metric drops >1pp belo
 uv run python -m benchmarks.regression.run --create-baseline
 uv run python -m benchmarks.regression.run
 ```
+
+### Latency Benchmarks
+
+`pytest-benchmark` micro-timings for `store()` and `recall()` at corpus sizes of 100 and 500 memories.
+
+```bash
+# Run with timing output (disable xdist so each test runs serially)
+uv run pytest tests/benchmarks/test_latency.py -p no:xdist -v
+
+# Save results for future comparison
+uv run pytest tests/benchmarks/test_latency.py -p no:xdist \
+    --benchmark-json=benchmarks/perf/results.json
+
+# Compare against a saved baseline
+uv run pytest tests/benchmarks/test_latency.py -p no:xdist --benchmark-compare
+```
+
+These tests run as correctness checks in the normal `pytest` suite; timing collection is disabled automatically when xdist is active.

@@ -39,6 +39,7 @@ experimental = [
 dev = [
     "pytest>=9.0",
     "pytest-asyncio>=1.0",
+    "pytest-benchmark>=5.1",
     "pytest-cov>=6.0",
     "pytest-xdist>=3.5",
     "ruff>=0.15",
@@ -63,9 +64,9 @@ select = ["E", "F", "I", "N", "UP", "RUF"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-n auto"
+addopts = "-n auto --benchmark-skip"
 markers = [
-    "integration: marks tests as MCP integration tests that spawn a real server subprocess",
+    "integration: marks tests as slow MCP integration tests (skip with -m 'not integration')",
 ]
 
 [tool.mypy]
