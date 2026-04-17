@@ -151,7 +151,7 @@ uv run python -m benchmarks.locomo.score benchmarks/locomo/output/myelin_locomo.
 
 ### Regression Gate
 
-Fast subset (54 LME + 304 LoCoMo questions). Fails if any metric drops >1pp below baseline.
+Fast subset (54 LME + 304 LoCoMo questions). Fails if any metric drops >2pp below baseline.
 
 ```bash
 uv run python -m benchmarks.regression.run --create-baseline
