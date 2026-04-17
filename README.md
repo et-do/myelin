@@ -66,7 +66,7 @@
 - **Cross-project knowledge** — architectural patterns from project A inform decisions in project B
 - **Self-organizing** — auto-classifies memory types (decisions, procedures, events), auto-infers recall filters, auto-prunes stale knowledge
 - **Private and local** — all data stays on your machine (or your team's server). No API keys. No cloud dependency. No data leaving your network.
-- **Gets better with use** — frequently co-recalled memories strengthen their association (Hebbian learning). The more you use it, the better recall gets.
+- **Gets better with use** — frequently co-recalled memories strengthen their association ([Hebbian learning](#hebbian-boost)). The more you use it, the better recall gets.
 - **98.2% Recall@5 on LongMemEval** — beats LLM-based systems using only local 22M-parameter models
 
 ---
@@ -268,8 +268,8 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 
 ### Maintenance
 - After extended sessions (10+ stores), run `consolidate` to build the
-  semantic network — improves recall by linking related entities.
-- Consolidation auto-triggers every 50 stores, but running it manually
+  [semantic network](#consolidation-offline) — it improves recall by linking related entities.
+- [Consolidation](#consolidation-offline) auto-triggers every 50 stores, but running it manually
   after a burst of activity gives immediate benefit.
 - Periodically run `decay_sweep` to prune stale memories (90+ days idle,
   <2 accesses).
@@ -283,8 +283,8 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 ### Tips for Effective Memory
 
 - **Use `project` consistently.** It's the primary organizational axis. An agent working on "myapp" should always store with `project="myapp"` so recall can filter by project.
-- **Pin critical context.** Use `pin_memory` for things every session should know (system architecture, active conventions, team preferences). Pinned memories are prepended to every recall result.
-- **Run consolidation periodically.** `myelin consolidate` (or it auto-runs every 50 stores) builds the semantic network — entity relationships that improve recall quality over time.
+- **Pin critical context.** Use `pin_memory` for things every session should know (system architecture, active conventions, team preferences). Pinned memories are prepended to every recall result via the [Thalamus overlay](#thalamus-overlay).
+- **Run consolidation periodically.** `myelin consolidate` (or it auto-runs every 50 stores) builds the [semantic network](#consolidation-offline) — entity relationships that improve recall quality over time.
 - **Run decay periodically.** `myelin decay` prunes memories that haven't been accessed in 90+ days with fewer than 2 accesses. Keeps the memory clean without manual curation.
 - **Export before major changes.** `myelin export backup.json` creates a full backup you can restore with `myelin import`.
 
@@ -328,10 +328,30 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 | **R@10** | **95.1%** | 88.9% |
 | **R@20** | **95.1%** | — |
 
+### Latency — 8-core CPU, no GPU
+
+| Operation | n | Mean | Min | Max | Notes |
+|-----------|---|------|-----|-----|-------|
+| **store** | 100 | **94ms** | 47ms | 149ms | embed (15ms) + dedup check + gist + ChromaDB write |
+| **store** | 500 | **67ms** | 43ms | 130ms | flat: HNSW dedup-query adds <5ms over 500 items |
+| **recall** | 100 | **142ms** | 94ms | 171ms | 3-probe pipeline: embed + HNSW + CE rerank |
+| **recall** | 500 | **130ms** | 116ms | 153ms | flat retrieval scaling confirmed |
+| **recall** | 1000 | **134ms** | 104ms | 173ms | still flat at 10× scale |
+| recall + project filter | 100 | **162ms** | 120ms | 224ms | similar to unfiltered at n=100; benefits grow with n |
+| recall + scope filter | 100 | **149ms** | 76ms | 188ms | similar to unfiltered at n=100; benefits grow with n |
+| [Hebbian](#hebbian-boost) + [Thalamus](#thalamus-overlay) overhead | 100 | **+~10ms** | — | — | seeded Hebbian (~125 pairs); SQLite WAL reads/writes |
+
+**Retrieval scales flat with collection size.** Recall averages 142ms at n=100, 130ms at n=500, and 134ms at n=1000 — all within the variance of each other. The bottleneck is fixed model inference: embedding the query (~15ms) and cross-encoder scoring the candidate pool (~60ms across 3 probes). HNSW index search adds <5ms at these scales. This means retrieval stays fast as memory grows — a user with 1000 memories pays the same latency as one with 100.
+
+**Store variance is high.** The 47ms–149ms range reflects gist extraction cost, which varies with content length and semantic density. Short, single-topic memories hit the low end; anything requiring multi-chunk gists hits higher. Mean of ~80ms is well within the 500ms agent tool-call budget.
+
+**Filters add negligible overhead at small n.** At n=100, project and scope filters show ~10–20ms higher means than unfiltered recall, but this is within measurement noise (stddev 24–38ms). Filter benefits appear at larger collection sizes where a filter can meaningfully reduce the cross-encoder candidate pool.
+
 ### Methodology
 
 - **LongMemEval**: [LongMemEval_S cleaned](https://huggingface.co/datasets/xiaowu0162/longmemeval-cleaned) — 500 questions, 6 categories (ICLR 2025). Oracle mode, chunks deduplicated to sessions.
 - **LoCoMo**: 10 conversations, 1,986 QA pairs. R@k = fraction of evidence sessions found in top-k.
+- **Latency**: `pytest-benchmark` micro-timings, ephemeral ChromaDB, warm models, 8-core CPU, no GPU, n=100–1000 memories. Run `uv run pytest tests/benchmarks/test_latency.py -p no:xdist --override-ini="addopts="` to reproduce.
 - **Models**: `all-MiniLM-L6-v2` (22M params) + `cross-encoder/ms-marco-MiniLM-L-6-v2` (22M params)
 - **Hardware**: 8-core CPU, no GPU
 - **LLM calls**: Zero in retrieval
@@ -347,9 +367,9 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 | **Cortical Region** | Specialized brain areas for different domains | `project` — each project is a distinct neural territory |
 | **Engram Cluster** | Co-active neurons forming a memory trace | `scope` — related memories (auth, billing) share a cluster |
 | **Memory System** | Distinct encoding/retrieval strategies | `memory_type` — episodic, semantic, procedural, prospective |
-| **Association Fiber** | White matter connecting co-active regions | Hebbian links — built from co-retrieval patterns |
+| **Association Fiber** | White matter connecting co-active regions | [Hebbian](#hebbian-boost) links — built from co-retrieval patterns |
 | **Gist Trace** | Meaning and detail stored in parallel | Vector embedding (gist) + raw content (verbatim) |
-| **Sparse Code** | Only 1-5% of neurons fire per stimulus | Chunking — each segment is a focused representation |
+| **Sparse Code** | Only 1-5% of neurons fire per stimulus | [Chunking](#3-chunking----storechnkingpy-pattern-separation) — each segment is a focused representation |
 
 ### Memory Systems
 
@@ -390,8 +410,8 @@ STORE (fast, zero-LLM)              RECALL (multi-probe)
 
 | Component | Module | What It Does |
 |-----------|--------|-------------|
-| **Hebbian Boost** | `recall/activation.py` | Co-retrieved memories strengthen mutual links |
-| **Thalamus Overlay** | `store/thalamus.py` | Prepends pinned memories, tracks recency |
+| <a name="hebbian-boost"></a>**Hebbian Boost** | `recall/activation.py` | Co-retrieved memories strengthen mutual links |
+| <a name="thalamus-overlay"></a>**Thalamus Overlay** | `store/thalamus.py` | Prepends pinned memories, tracks recency |
 | **Decay Sweep** | `recall/decay.py` | TTL pruning of unrehearsed, low-access memories |
 
 ### Consolidation (offline)
@@ -533,8 +553,8 @@ Each probe passes through these stages:
 | … | … |
 
 **Post-recall:**
-- **Hebbian LTP** (`recall/activation.py`) — co-retrieved memories strengthen mutual links: `weight += hebbian_delta` per pair, future boost = `hebbian_scale × log1p(weight)`
-- **Thalamus overlay** (`store/thalamus.py`) — prepends any pinned memories (L0 identity/system context, L1 critical facts) to every result set
+- **[Hebbian LTP](#hebbian-boost)** (`recall/activation.py`) — co-retrieved memories strengthen mutual links: `weight += hebbian_delta` per pair, future boost = `hebbian_scale × log1p(weight)`
+- **[Thalamus overlay](#thalamus-overlay)** (`store/thalamus.py`) — prepends any pinned memories (L0 identity/system context, L1 critical facts) to every result set
 
 ---
 
@@ -559,12 +579,12 @@ myelin import out.json  # Import memories from JSON
 | Tool | Description |
 |---|---|
 | `store` | Encode a memory with context metadata (auto-classifies type, auto-chunks, 500K char limit). Pass `overwrite=true` to replace a near-duplicate instead of rejecting. |
-| `recall` | Retrieve by semantic similarity (auto-inferred filters, multi-probe, Hebbian boost, 10K char limit) |
+| `recall` | Retrieve by semantic similarity (auto-inferred filters, multi-probe, [Hebbian boost](#hebbian-boost), 10K char limit) |
 | `forget` | Remove a specific memory by ID |
 | `pin_memory` | Pin a memory — always included in recall results |
 | `unpin_memory` | Remove a pin |
 | `decay_sweep` | Prune stale memories (access-based TTL) |
-| `consolidate` | Replay episodes into the semantic network |
+| `consolidate` | Replay episodes into the [semantic network](#consolidation-offline) |
 | `status` | Memory system health check (counts, configuration) |
 | `health` | Lightweight liveness probe (ok + version, no store initialization) |
 
@@ -580,9 +600,9 @@ Contents:
 | File | Purpose |
 |---|---|
 | `chroma/` | Vector database (ChromaDB) — embeddings and metadata |
-| `hebbian.db` | Co-access patterns between memories |
+| `hebbian.db` | Co-access patterns between memories ([Hebbian Boost](#hebbian-boost)) |
 | `neocortex.db` | Semantic network — entities and relationships |
-| `thalamus.db` | Pinned memories and recency tracking |
+| `thalamus.db` | Pinned memories and recency tracking ([Thalamus Overlay](#thalamus-overlay)) |
 
 SQLite files use WAL mode for concurrent read performance.
 

@@ -67,6 +67,7 @@ testpaths = ["tests"]
 addopts = "-n auto --benchmark-skip"
 markers = [
     "integration: marks tests as slow MCP integration tests (skip with -m 'not integration')",
+    "slow: marks tests as slow (skip with -m 'not slow')",
 ]
 
 [tool.mypy]

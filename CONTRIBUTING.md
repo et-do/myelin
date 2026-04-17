@@ -41,9 +41,9 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) to drive aut
 
 | Type | When to use | Version bump |
 |------|-------------|--------------|
-| `feat:` | New feature | minor (0.1.0 → 0.2.0) |
-| `fix:` | Bug fix | patch (0.1.0 → 0.1.1) |
-| `feat!:` or `fix!:` | Breaking change | minor while pre-1.0 |
+| `feat:` | New feature | minor (`0.1.0 → 0.2.0`) |
+| `fix:` | Bug fix | patch (`0.1.0 → 0.1.1`) |
+| `feat!:` or `fix!:` | Breaking change | major (`0.1.0 → 1.0.0`) |
 | `docs:` | Documentation only | none |
 | `chore:` | Maintenance, CI, deps | none |
 | `refactor:` | Code change, no new feature or fix | none |
@@ -68,6 +68,12 @@ Releases are fully automated via [release-please](https://github.com/googleapis/
 4. A GitHub Release + tag is created automatically, and `pyproject.toml` version is bumped
 
 You never need to manually edit the version number.
+
+#### Version bumping while pre-1.0
+
+While the project is pre-1.0 (`0.X.Y`), standard semver applies with one adjustment: breaking changes do **not** bump to `1.0.0` automatically — they stay in the `0.X.Y` range until you decide the API is stable enough for 1.0. Use `feat!:` for breaking changes; release-please will bump the major when you're ready if you configure it to do so, otherwise treat the `0.X.0` bump as the signal that something significant changed.
+
+In practice: use `feat:` freely for new features — each one bumps `0.X → 0.X+1`. Use `fix:` for patches. Save `feat!:` for genuine API breaks.
 
 ## Quality Checks
 
