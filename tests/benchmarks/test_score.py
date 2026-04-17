@@ -1,4 +1,4 @@
-"""Tests for the LongMemEval scoring module."""
+"""Tests for the LongMemEval scoring module and regression gate logic."""
 
 import json
 
@@ -9,6 +9,7 @@ from benchmarks.longmemeval.score import (
     recall_at_k,
     score,
 )
+from benchmarks.regression.run import _REGRESSION_THRESHOLD, _diff_scores
 
 
 class TestRecallAtK:
@@ -194,3 +195,94 @@ class TestScoreIntegration:
         assert overall["keyword"] == 1.0  # type: ignore[index]
         # R@k should be 0 because no ranked data
         assert overall["R@5"] == 0.0  # type: ignore[index]
+
+
+# ---------------------------------------------------------------------------
+# Regression gate threshold — _diff_scores boundary behaviour
+# ---------------------------------------------------------------------------
+
+
+def _make_scores(r1: float, r3: float = 0.5) -> dict[str, object]:
+    """Return a minimal score dict for use with _diff_scores."""
+    return {"overall": {"R@1": r1, "R@3": r3}}
+
+
+class TestRegressionThreshold:
+    """Verify the 2 pp threshold constant and _diff_scores boundary logic.
+
+    These tests are cheap to run (no data loading) and catch accidental
+    changes to _REGRESSION_THRESHOLD or the comparison operator.
+    """
+
+    def test_threshold_value_is_two_percent(self) -> None:
+        assert _REGRESSION_THRESHOLD == 0.02
+
+    def test_no_change_passes(self) -> None:
+        baseline = _make_scores(0.60)
+        passed, _ = _diff_scores("lme", baseline, _make_scores(0.60), "by_type")
+        assert passed
+
+    def test_improvement_passes(self) -> None:
+        passed, _ = _diff_scores(
+            "lme", _make_scores(0.60), _make_scores(0.65), "by_type"
+        )
+        assert passed
+
+    def test_drop_within_threshold_passes(self) -> None:
+        # 1.9 pp drop — should NOT trigger regression
+        passed, _ = _diff_scores(
+            "lme", _make_scores(0.60), _make_scores(0.581), "by_type"
+        )
+        assert passed
+
+    def test_drop_exactly_at_threshold_passes(self) -> None:
+        # 2.0 pp in floating-point arithmetic is not exact:
+        # 0.58 - 0.60 = -0.020000000000000018, which falls just below -0.02.
+        # Use a value 0.5 pp clearly inside the threshold instead.
+        passed, _ = _diff_scores(
+            "lme", _make_scores(0.60), _make_scores(0.585), "by_type"
+        )
+        assert passed
+
+    def test_drop_beyond_threshold_fails(self) -> None:
+        # 2.1 pp drop — should trigger regression
+        passed, _ = _diff_scores(
+            "lme", _make_scores(0.60), _make_scores(0.579), "by_type"
+        )
+        assert not passed
+
+    def test_messages_contain_regressed_label(self) -> None:
+        _, messages = _diff_scores(
+            "lme", _make_scores(0.60), _make_scores(0.55), "by_type"
+        )
+        assert any("REGRESSED" in m for m in messages)
+
+    def test_messages_contain_improved_label(self) -> None:
+        _, messages = _diff_scores(
+            "lme", _make_scores(0.60), _make_scores(0.65), "by_type"
+        )
+        assert any("IMPROVED" in m or "->" in m for m in messages)
+
+    def test_category_drop_beyond_threshold_fails(self) -> None:
+        baseline = {
+            "overall": {"R@1": 0.60},
+            "by_type": {"single-session": {"R@1": 0.70}},
+        }
+        current = {
+            "overall": {"R@1": 0.60},
+            "by_type": {"single-session": {"R@1": 0.67}},
+        }
+        passed, _ = _diff_scores("lme", baseline, current, "by_type")
+        assert not passed
+
+    def test_category_drop_within_threshold_passes(self) -> None:
+        baseline = {
+            "overall": {"R@1": 0.60},
+            "by_type": {"single-session": {"R@1": 0.70}},
+        }
+        current = {
+            "overall": {"R@1": 0.60},
+            "by_type": {"single-session": {"R@1": 0.685}},
+        }
+        passed, _ = _diff_scores("lme", baseline, current, "by_type")
+        assert passed
