@@ -58,27 +58,11 @@ class TestConfigValidators:
         with pytest.raises(Exception):
             MyelinSettings(consolidation_interval=-1)
 
-    def test_worker_decay_interval_default(self) -> None:
-        cfg = MyelinSettings()
-        assert cfg.worker_decay_interval_hours == 24.0
+    def test_decay_interval_allows_zero(self) -> None:
+        """Zero disables the auto-decay timer."""
+        cfg = MyelinSettings(decay_interval_hours=0)
+        assert cfg.decay_interval_hours == 0.0
 
-    def test_worker_decay_interval_allows_zero(self) -> None:
-        """Zero disables periodic decay."""
-        cfg = MyelinSettings(worker_decay_interval_hours=0)
-        assert cfg.worker_decay_interval_hours == 0.0
-
-    def test_worker_decay_interval_rejects_negative(self) -> None:
-        with pytest.raises(Exception):
-            MyelinSettings(worker_decay_interval_hours=-1.0)
-
-    def test_worker_queue_maxsize_default(self) -> None:
-        cfg = MyelinSettings()
-        assert cfg.worker_queue_maxsize == 10
-
-    def test_worker_queue_maxsize_rejects_zero(self) -> None:
-        with pytest.raises(Exception):
-            MyelinSettings(worker_queue_maxsize=0)
-
-    def test_worker_queue_maxsize_rejects_negative(self) -> None:
-        with pytest.raises(Exception):
-            MyelinSettings(worker_queue_maxsize=-5)
+    def test_decay_interval_rejects_negative(self) -> None:
+        with pytest.raises(ValueError, match=">= 0"):
+            MyelinSettings(decay_interval_hours=-1.0)

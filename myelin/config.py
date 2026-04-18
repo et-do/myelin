@@ -83,12 +83,6 @@ class MyelinSettings(BaseSettings):
     # Auto-consolidation — replay after N stores (0 = disabled)
     consolidation_interval: int = 50
 
-    # Background worker — off-hot-path maintenance
-    # decay_interval_hours: how often to auto-run decay sweep (0 = disabled)
-    worker_decay_interval_hours: float = 24.0
-    # queue_maxsize: max pending consolidation tasks; extras are dropped (idempotent)
-    worker_queue_maxsize: int = 10
-
     @field_validator("neocortex_weight", "dedup_similarity_threshold")
     @classmethod
     def _unit_range(cls, v: float) -> float:
@@ -137,19 +131,11 @@ class MyelinSettings(BaseSettings):
             raise ValueError(msg)
         return v
 
-    @field_validator("worker_decay_interval_hours")
+    @field_validator("decay_interval_hours")
     @classmethod
     def _non_negative_float(cls, v: float) -> float:
         if v < 0:
             msg = f"must be >= 0, got {v}"
-            raise ValueError(msg)
-        return v
-
-    @field_validator("worker_queue_maxsize")
-    @classmethod
-    def _positive_queue_size(cls, v: int) -> int:
-        if v < 1:
-            msg = f"must be >= 1, got {v}"
             raise ValueError(msg)
         return v
 

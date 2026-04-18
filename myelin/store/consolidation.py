@@ -37,6 +37,7 @@ from dataclasses import dataclass
 from itertools import combinations
 from typing import Any
 
+from .entorhinal import _STOP_WORDS as _STOPWORDS
 from .neocortex import SemanticNetwork
 
 logger = logging.getLogger(__name__)
@@ -54,65 +55,6 @@ _TECH_PATTERN = re.compile(r"\b([A-Z][a-z]+[A-Z]\w+|[A-Z]{2,}(?:_[A-Z]{2,})*)\b"
 # Simple quoted terms — "JWT", "OAuth 2.0"
 _QUOTED_PATTERN = re.compile(r'"([^"]{2,40})"')
 
-# Filter out common English words that match name patterns
-_STOPWORDS = frozenset(
-    {
-        "the",
-        "this",
-        "that",
-        "with",
-        "from",
-        "have",
-        "will",
-        "been",
-        "were",
-        "they",
-        "their",
-        "about",
-        "would",
-        "could",
-        "should",
-        "which",
-        "there",
-        "where",
-        "after",
-        "before",
-        "since",
-        "while",
-        "other",
-        "what",
-        "when",
-        "your",
-        "some",
-        "each",
-        "also",
-        "than",
-        "more",
-        "into",
-        "over",
-        "just",
-        "like",
-        "back",
-        "only",
-        "well",
-        "then",
-        "here",
-        "sure",
-        "yeah",
-        "okay",
-        "right",
-        "great",
-        "good",
-        "nice",
-        # Common start-of-sentence words
-        "However",
-        "Meanwhile",
-        "Therefore",
-        "Furthermore",
-        "Additionally",
-    }
-)
-
 
 def extract_entities(text: str) -> list[str]:
     """Extract candidate entity names from text.
@@ -124,12 +66,12 @@ def extract_entities(text: str) -> list[str]:
     for m in _NAME_PATTERN.finditer(text):
         candidate = m.group(1)
         words = candidate.split()
-        if not any(w in _STOPWORDS for w in words):
+        if not any(w.lower() in _STOPWORDS for w in words):
             entities.add(candidate.lower())
 
     for m in _TECH_PATTERN.finditer(text):
         candidate = m.group(1)
-        if candidate not in _STOPWORDS and len(candidate) >= 3:
+        if candidate.lower() not in _STOPWORDS and len(candidate) >= 3:
             entities.add(candidate.lower())
 
     for m in _QUOTED_PATTERN.finditer(text):
