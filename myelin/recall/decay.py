@@ -50,3 +50,22 @@ def find_stale(
             stale_ids.append(entry["id"])
 
     return stale_ids
+
+
+def find_lru(
+    metadata_list: list[dict[str, Any]],
+    n: int,
+    *,
+    exclude_ids: set[str] | None = None,
+) -> list[str]:
+    """Return the IDs of the *n* least-recently-used memories.
+
+    Entries whose IDs are in *exclude_ids* (e.g. pinned memories) are
+    skipped so they are never selected for eviction.
+    """
+    if n <= 0:
+        return []
+    exclude = exclude_ids or set()
+    candidates = [m for m in metadata_list if m["id"] not in exclude]
+    candidates.sort(key=lambda m: m["last_accessed"])
+    return [m["id"] for m in candidates[:n]]

@@ -198,6 +198,26 @@ class TestShutdown:
             mock_neo.assert_called_once()
             mock_thal.assert_called_once()
 
+        # Decay timer should also be cleared
+        assert srv._decay_timer is None
+
+    def test_shutdown_stops_running_decay_timer(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """shutdown() stops the decay timer if it is running."""
+        cfg = MyelinSettings(data_dir=tmp_path / ".myelin", decay_interval_hours=24.0)  # type: ignore[arg-type]
+        configure(cfg)
+
+        import myelin.server as srv
+
+        timer = srv._get_decay_timer()
+        timer.start()
+        assert timer.is_running
+
+        shutdown()
+        assert not timer.is_running
+        assert srv._decay_timer is None
+
     def test_shutdown_tolerates_uninitialized(self) -> None:
         """shutdown() is safe to call when nothing is initialized."""
         configure(MyelinSettings(data_dir="/tmp/myelin_test_empty"))

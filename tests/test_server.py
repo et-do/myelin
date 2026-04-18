@@ -115,6 +115,11 @@ class TestDoStatus:
         assert "embedding_model" in result
         assert result["memory_count"] == 0
 
+    def test_decay_timer_status_present(self) -> None:
+        result = do_status()
+        assert "decay_timer_running" in result
+        assert result["decay_timer_running"] is False  # timer not started in tests
+
 
 class TestDoConsolidate:
     def test_consolidate_empty(self) -> None:
@@ -156,10 +161,13 @@ class TestEndToEnd:
 
 
 class TestAutoConsolidation:
-    def test_triggers_after_interval(self, tmp_path: pytest.TempPathFactory) -> None:
-        """Auto-consolidation fires after consolidation_interval stores."""
+    def test_triggers_after_interval_inline(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """When the worker is not running, consolidation falls back to inline."""
         cfg = MyelinSettings(data_dir=tmp_path / ".myelin", consolidation_interval=3)  # type: ignore[arg-type]
         configure(cfg)
+        # Worker is not started — inline path is taken.
 
         # Store 2 — no consolidation yet
         r1 = do_store("Kai Tanaka works on Project Alpha backend")
@@ -167,7 +175,7 @@ class TestAutoConsolidation:
         r2 = do_store("Project Alpha uses JWT tokens for authentication")
         assert "consolidation" not in r2
 
-        # Store 3 — should trigger consolidation
+        # Store 3 — should trigger inline consolidation (worker not running)
         r3 = do_store("Kai Tanaka deployed the OAuth service for Project Alpha")
         assert "consolidation" in r3
         assert r3["consolidation"]["memories_replayed"] >= 1

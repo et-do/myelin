@@ -15,22 +15,11 @@ suppress_noisy_loggers()
 
 
 def cmd_status(_args: argparse.Namespace) -> None:
-    from .store import Hippocampus
+    from .server import configure, do_status
 
-    hc = Hippocampus()
-    integrity = hc.check_integrity()
-    print(
-        json.dumps(
-            {
-                "memory_count": integrity["memory_count"],
-                "summary_count": integrity["summary_count"],
-                "consistent": integrity["consistent"],
-                "data_dir": str(settings.data_dir),
-                "embedding_model": settings.embedding_model,
-            },
-            indent=2,
-        )
-    )
+    configure(settings)
+    result = do_status()
+    print(json.dumps(result, indent=2))
 
 
 def cmd_decay(_args: argparse.Namespace) -> None:
@@ -58,6 +47,108 @@ def cmd_consolidate(_args: argparse.Namespace) -> None:
 
     result = do_consolidate()
     print(json.dumps(result, indent=2))
+
+
+def cmd_debug_recall(args: argparse.Namespace) -> None:
+    from .server import configure, do_debug_recall
+
+    configure(settings)
+    data = do_debug_recall(
+        query=args.query,
+        n_results=args.n,
+        project=args.project or "",
+        language=args.language or "",
+        scope=args.scope or "",
+        memory_type=args.memory_type or "",
+    )
+
+    if args.json:
+        print(json.dumps(data, indent=2, default=str))
+        return
+
+    # --- Human-readable terminal output ---
+    col_width = 72  # column width
+
+    def _sep(char: str = "─") -> None:
+        print(char * col_width)
+
+    def _kv(label: str, value: object, width: int = 18) -> None:
+        print(f"  {label:<{width}}{value}")
+
+    print()
+    _sep("═")
+    print("  MYELIN DEBUG RECALL")
+    _sep("═")
+    print(f'  Query          "{data["query"]}"')
+    print(f"  Memory count   {data['memory_count']}")
+    print()
+
+    # Query plan
+    print("  QUERY PLAN  (PFC inference)")
+    _sep()
+    qp = data["query_plan"]
+    _kv("memory_type →", qp["memory_type"] or "none inferred")
+    _kv("scope_hint  →", qp["scope_hint"] or "none inferred")
+    if qp["signals"]:
+        signals_str = "  ".join(f"{k}={v}" for k, v in qp["signals"].items())
+        _kv("signals", signals_str)
+    fa = data["filters_applied"]
+    explicit = {k: v for k, v in fa.items() if v and not k.startswith("auto_")}
+    auto = {k[5:]: v for k, v in fa.items() if k.startswith("auto_") and v}
+    if explicit:
+        _kv("explicit →", "  ".join(f"{k}={v}" for k, v in explicit.items()))
+    if auto:
+        _kv("auto-applied →", "  ".join(f"{k}={v}" for k, v in auto.items()))
+    elif not explicit:
+        _kv("filters →", "none")
+    print()
+
+    # Gate check
+    gc = data["gate_check"]
+    gate_label = "✓ ok" if gc["would_store"] else f"✗ {gc['reason']}"
+    print("  AMYGDALA GATE  (would this query be stored as a memory?)")
+    _sep()
+    _kv("verdict →", gate_label)
+    print()
+
+    # Results
+    results = data["results"]
+    if not results:
+        print("  No results found.")
+        print()
+        _sep("═")
+        return
+
+    print(f"  RESULTS  (top {len(results)})")
+    for r in results:
+        _sep()
+        rank = r["rank"]
+        score = r["final_score"]
+        bi = r["bi_encoder_sim"]
+        ce = r["ce_score"]
+        hebb = r["hebbian_weight"]
+        mt = r.get("memory_type") or "—"
+        sc = r.get("scope") or "—"
+        proj = r.get("project") or "—"
+        acc = r.get("access_count", 0)
+
+        bi_str = f"{bi:.4f}" if bi is not None else "n/a"
+        ce_str = f"{ce:.4f}" if ce is not None else "n/a (CE disabled)"
+
+        print(
+            f"  #{rank}  score={score:.4f}  "
+            f"bi={bi_str}  ce={ce_str}  hebbian={hebb:.3f}"
+        )
+        print(f"  {r['id']}  [{proj} / {sc} / {mt}]  access={acc}")
+        # Wrap content preview at col_width-4 chars
+        preview = r["content_preview"]
+        chunk = col_width - 4
+        lines = [preview[i : i + chunk] for i in range(0, len(preview), chunk)]
+        for line in lines:
+            print(f"    {line}")
+    print()
+    _sep("═")
+    print()
 
 
 def cmd_export(args: argparse.Namespace) -> None:
@@ -134,6 +225,28 @@ def main() -> None:
     p_import = sub.add_parser("import", help="Import memories from JSON")
     p_import.add_argument("input", help="JSON file to import")
 
+    p_debug = sub.add_parser(
+        "debug-recall",
+        help="Run a recall query and show full pipeline breakdown",
+    )
+    p_debug.add_argument("query", help="Query string to recall against")
+    p_debug.add_argument(
+        "-n",
+        type=int,
+        default=5,
+        metavar="N",
+        help="Number of results (default: 5)",
+    )
+    p_debug.add_argument("--project", default="", help="Filter by project")
+    p_debug.add_argument("--language", default="", help="Filter by language")
+    p_debug.add_argument("--scope", default="", help="Filter by scope")
+    p_debug.add_argument(
+        "--memory-type", dest="memory_type", default="", help="Filter by memory_type"
+    )
+    p_debug.add_argument(
+        "--json", action="store_true", help="Output raw JSON instead of formatted text"
+    )
+
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -148,6 +261,7 @@ def main() -> None:
         "consolidate": cmd_consolidate,
         "export": cmd_export,
         "import": cmd_import,
+        "debug-recall": cmd_debug_recall,
     }
     commands[args.command](args)
 

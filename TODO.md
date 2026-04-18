@@ -24,9 +24,9 @@
 - [x] Profile end-to-end recall to find actual bottleneck breakdown (embed / search / boost / rerank) — **Result: ~300ms avg on 5-session dataset** (embed 10-22ms, ChromaDB 3-9ms, gist 5-22ms, CE 40-80ms, multi-probe overhead ~150ms). Well under 500ms target.
 
 ### Store latency (~185ms simple, ~600ms long) — defer to P1 background worker
-- [ ] Make gist embedding async — return from store() immediately, encode gist in background — needs P1 background worker
-- [ ] Make Hebbian weight update async — fire-and-forget after store completes — needs P1 background worker
-- [ ] Make EC keyword extraction async — doesn't block the store's critical path — needs P1 background worker
+- [ ] Make gist embedding async — return from store() immediately, encode gist in background — needs P1 background worker (worker exists, gist not yet offloaded)
+- [ ] Make Hebbian weight update async — fire-and-forget after store completes — needs P1 background worker (worker exists, Hebbian not yet offloaded)
+- [ ] Make EC keyword extraction async — doesn't block the store's critical path — needs P1 background worker (worker exists, EC not yet offloaded)
 
 ### Data integrity
 - [x] Wrap store() in try/except — gist indexing failures no longer crash store (chunks preserved)
@@ -41,18 +41,18 @@
 - [ ] Evaluate keeping models in shared memory across server restarts (mmap weights)
 
 ### Background worker thread (async operations)
-- [ ] Create single background worker with task queue
-- [ ] Move consolidation to background worker (currently blocks every 50th store)
-- [ ] Move decay sweep to background worker (currently manual CLI only)
+- [x] Create single background worker with task queue
+- [x] Move consolidation to background worker (currently blocks every 50th store)
+- [x] Move decay sweep to background worker (currently manual CLI only)
 - [ ] Move gist embedding to background worker (fire after store returns)
 - [ ] Move Hebbian weight updates to background worker
 - [ ] Move periodic dedup sweep to background worker
 - [ ] Add idle detection — run heavy tasks (consolidation, dedup) only when no active requests
-- [ ] Never run any background task inline with store() or recall()
+- [x] Never run any background task inline with store() or recall() — falls back to inline only when worker not started (tests)
 
 ### Unbounded growth
-- [ ] Add hard storage cap (configurable max memories) with LRU eviction
-- [ ] Auto-decay on background timer (not manual CLI)
+- [x] Add hard storage cap (configurable max memories) with LRU eviction
+- [x] Auto-decay on background timer (not manual CLI)
 - [x] Fix immortal memory bug: access_count >= 2 should NOT exempt from all decay — added `max_idle_days_absolute=365` hard cap
 - [ ] Periodic dedup sweep — find and merge near-duplicate memories that slipped past gate
 - [ ] ChromaDB HNSW compaction (rebuild index after large deletes)
@@ -133,7 +133,7 @@
 - [x] Export/import memories (JSON) for portability and backup — `myelin export`/`myelin import` CLI commands
 - [ ] Point-in-time backup strategy (ChromaDB snapshot + SQLite backup)
 - [ ] Memory versioning — when a preference updates, keep history (not just overwrite)
-- [ ] CLI command: `myelin debug-recall "query"` — show full ranking breakdown for debugging
+- [x] CLI command: `myelin debug-recall "query"` — show full ranking breakdown for debugging
 
 ## P3 — Performance tuning (after production basics)
 
