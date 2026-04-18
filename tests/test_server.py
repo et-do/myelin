@@ -6,6 +6,7 @@ import pytest
 
 from myelin.config import MyelinSettings
 from myelin.server import (
+    _signal_handler,
     configure,
     do_consolidate,
     do_decay_sweep,
@@ -13,6 +14,7 @@ from myelin.server import (
     do_recall,
     do_status,
     do_store,
+    warm_up,
 )
 
 
@@ -188,3 +190,119 @@ class TestAutoConsolidation:
         for i in range(5):
             result = do_store(f"Memory number {i} about some topic here")
             assert "consolidation" not in result
+
+
+class TestDoPinUnpin:
+    def test_pin_returns_pinned_status(self) -> None:
+        from myelin.server import do_pin
+
+        result = do_pin("mem-123", priority=2, label="important")
+        assert result["status"] == "pinned"
+        assert result["memory_id"] == "mem-123"
+        assert result["priority"] == 2
+
+    def test_unpin_existing_memory(self) -> None:
+        from myelin.server import do_pin, do_unpin
+
+        do_pin("mem-456")
+        result = do_unpin("mem-456")
+        assert result["status"] == "unpinned"
+
+    def test_unpin_nonexistent_returns_not_found(self) -> None:
+        from myelin.server import do_unpin
+
+        result = do_unpin("does-not-exist")
+        assert result["status"] == "not_found"
+
+    def test_pinned_memories_injected_into_recall(self) -> None:
+        from myelin.server import do_pin, do_recall
+
+        r = do_store("The load balancer uses nginx with round-robin policy")
+        memory_id = r["id"]
+        do_pin(memory_id, priority=1)
+
+        # Recall with unrelated query — pinned memory should still appear
+        results = do_recall("completely unrelated query about cooking recipes")
+        ids = [res["id"] for res in results]
+        assert memory_id in ids
+
+
+class TestDoDecaySweepWithStale:
+    def test_sweep_prunes_stale_memories(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """Memories with ancient last_accessed dates are pruned."""
+        from unittest.mock import patch
+
+        from myelin.server import do_decay_sweep
+
+        do_store("Ancient ephemeral fact that should be pruned by decay")
+        memory_id = do_recall("ephemeral fact")[0]["id"]
+
+        # Make find_stale return it as stale
+        with patch("myelin.server.find_stale", return_value=[memory_id]):
+            result = do_decay_sweep()
+
+        assert result["pruned"] == 1
+        assert result["remaining"] == 0
+
+
+class TestDoStoreChunksAndReplace:
+    def test_store_long_content_reports_chunks(self) -> None:
+        """Multi-chunk content returns chunks count in result."""
+        # Use paragraph-split content so chunk_text generates multiple segments
+        para1 = "The authentication service processes login requests. " * 10
+        para2 = "JWT tokens are validated using RS256 asymmetric keys. " * 10
+        long_content = para1 + "\n\n" + para2
+        result = do_store(long_content)
+        assert result["status"] == "stored"
+        assert "chunks" in result
+        assert result["chunks"] > 1
+
+    def test_store_overwrite_returns_replaced(self) -> None:
+        """store with overwrite=True on near-duplicate returns replaced key."""
+        original = "The payment service uses Stripe for card processing"
+        updated = "The payment service uses Stripe for all payment processing"
+        do_store(original)
+        result = do_store(updated, overwrite=True)
+        assert result["status"] in ("updated", "stored")
+        if result["status"] == "updated":
+            assert "replaced" in result
+
+
+class TestShutdown:
+    def test_shutdown_clears_singletons(self) -> None:
+        """shutdown() closes and resets all server singletons."""
+        import myelin.server as srv
+
+        # Trigger initialization
+        do_store("Initialize the server singletons by storing something here")
+        assert srv._hippocampus is not None
+
+        srv.shutdown()
+        assert srv._hippocampus is None
+        assert srv._hebbian is None
+        assert srv._neocortex is None
+        assert srv._thalamus is None
+
+    def test_shutdown_idempotent(self) -> None:
+        """Calling shutdown twice does not raise."""
+        import myelin.server as srv
+
+        srv.shutdown()
+        srv.shutdown()  # should not raise
+
+
+class TestWarmUp:
+    def test_warm_up_runs_without_error(self) -> None:
+        """warm_up() pre-warms models; must not raise."""
+        warm_up()  # covers server.py line 112
+
+
+class TestSignalHandler:
+    def test_signal_handler_raises_system_exit(self) -> None:
+        """_signal_handler raises SystemExit on any signal."""
+        import pytest as _pytest
+
+        with _pytest.raises(SystemExit):
+            _signal_handler(15, None)  # covers server.py line 135

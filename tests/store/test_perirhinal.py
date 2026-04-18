@@ -123,3 +123,33 @@ class TestSummaryIndex:
         idx = self._make_index()
         idx.add("s1", "test summary", metadata={"project": "myelin"})
         assert idx.count() == 1
+
+    def test_filler_sentence_filtered_when_long_enough_to_pass_length_check(
+        self,
+    ) -> None:
+        """Filler sentences >=15 chars are removed even after passing length check.
+
+        Covers perirhinal.py line 172 — the ``continue`` inside the filler regex
+        branch that previously had no test exercising it.
+        """
+        # "Sounds good!!!!!" is 16 chars (>= 15) so it passes the length gate,
+        # but matches the filler regex and must be discarded.
+        text = "The system uses JWT tokens for authentication. Sounds good!!!!!"
+        result = summarise(text)
+        assert "jwt" in result.lower() or "authentication" in result.lower()
+        assert "sounds good" not in result.lower()
+
+
+class TestSummaryIndexDelete:
+    def test_delete_nonexistent_does_not_raise(self) -> None:
+        """SummaryIndex.delete on a missing ID must silently no-op.
+
+        Covers perirhinal.py lines 255-258 — the try/except guard inside delete().
+        """
+        import chromadb
+        from sentence_transformers import SentenceTransformer
+
+        client = chromadb.Client()
+        embedder = SentenceTransformer("all-MiniLM-L6-v2")
+        idx = SummaryIndex(client, embedder, collection_name="test_del_noexist")
+        idx.delete("does-not-exist")  # must not raise
