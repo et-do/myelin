@@ -152,34 +152,3 @@ class HebbianTracker:
                     [a, b],
                 )
             return len(stale)
-
-    def lookup_weights(self, ids: list[str]) -> dict[str, float]:
-        """Return the total Hebbian co-weight for each ID in *ids*.
-
-        For each memory, sums the co_access weights with every other
-        memory in the set.  Used by debug-recall to show how much each
-        result benefits from reinforcement before recall re-ranks it.
-        """
-        if len(ids) < 2:
-            return {mid: 0.0 for mid in ids}
-        pairs = list(combinations(sorted(set(ids)), 2))
-        with self._lock:
-            placeholders = " OR ".join(["(id_a = ? AND id_b = ?)"] * len(pairs))
-            params: list[str] = [v for pair in pairs for v in pair]
-            weights: dict[tuple[str, str], float] = {}
-            for row in self.db.execute(
-                f"SELECT id_a, id_b, weight FROM co_access WHERE {placeholders}",
-                params,
-            ).fetchall():
-                weights[(row[0], row[1])] = row[2]
-
-        result: dict[str, float] = {}
-        for mid in ids:
-            total = 0.0
-            for other in ids:
-                if other == mid:
-                    continue
-                a, b = min(mid, other), max(mid, other)
-                total += weights.get((a, b), 0.0)
-            result[mid] = round(total, 4)
-        return result

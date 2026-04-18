@@ -107,23 +107,16 @@ class TestDoStatus:
     def test_returns_status_fields(self) -> None:
         result = do_status()
         assert "memory_count" in result
-        assert "summary_count" in result
-        assert "consistent" in result
         assert "entity_count" in result
         assert "relationship_count" in result
         assert "data_dir" in result
         assert "embedding_model" in result
         assert result["memory_count"] == 0
-        assert result["consistent"] is True
 
-    def test_worker_status_present(self) -> None:
+    def test_decay_timer_status_present(self) -> None:
         result = do_status()
-        assert "worker" in result
-        worker = result["worker"]
-        assert "running" in worker
-        assert "queue_depth" in worker
-        assert "last_consolidation_at" in worker
-        assert "last_decay_at" in worker
+        assert "decay_timer_running" in result
+        assert result["decay_timer_running"] is False  # timer not started in tests
 
 
 class TestDoConsolidate:
@@ -184,53 +177,6 @@ class TestAutoConsolidation:
         r3 = do_store("Kai Tanaka deployed the OAuth service for Project Alpha")
         assert "consolidation" in r3
         assert r3["consolidation"]["memories_replayed"] >= 1
-
-    def test_triggers_after_interval_async(
-        self, tmp_path: pytest.TempPathFactory
-    ) -> None:
-        """When the worker is running, consolidation is scheduled asynchronously."""
-        import threading
-
-        from myelin.worker import BackgroundWorker
-
-        cfg = MyelinSettings(data_dir=tmp_path / ".myelin", consolidation_interval=3)  # type: ignore[arg-type]
-        configure(cfg)
-
-        consolidation_ran = threading.Event()
-
-        # Patch the worker used by the server with one whose consolidate_fn
-        # signals us so we can verify async execution without race-waiting.
-        import myelin.server as srv
-
-        original_consolidate = srv.do_consolidate
-
-        def _signal_and_consolidate() -> dict:
-            result = original_consolidate()
-            consolidation_ran.set()
-            return result
-
-        worker = BackgroundWorker(
-            consolidate_fn=_signal_and_consolidate,
-            decay_fn=srv.do_decay_sweep,
-            decay_interval_hours=0,
-        )
-        worker.start()
-        srv._worker = worker
-
-        try:
-            r1 = do_store("Kai Tanaka works on Project Alpha backend")
-            assert "consolidation" not in r1
-            r2 = do_store("Project Alpha uses JWT tokens for authentication")
-            assert "consolidation" not in r2
-
-            # Store 3 — consolidation queued to worker, response says "scheduled"
-            r3 = do_store("Kai Tanaka deployed the OAuth service for Project Alpha")
-            assert r3.get("consolidation") in ("scheduled", "skipped")
-
-            # Worker executes consolidation asynchronously
-            assert consolidation_ran.wait(timeout=5), "consolidation did not run"
-        finally:
-            worker.stop()
 
     def test_disabled_when_interval_zero(
         self, tmp_path: pytest.TempPathFactory

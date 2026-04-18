@@ -29,17 +29,16 @@ from .store import (
     replay,
 )
 from .timer import DecayTimer
-from .worker import BackgroundWorker
 
 
 @asynccontextmanager
 async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
-    """Start model warm-up and background worker; clean up on shutdown."""
+    """Start model warm-up and decay timer; clean up on shutdown."""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, warm_up)
-    _get_worker().start()
+    _get_decay_timer().start()
     yield
-    _get_worker().stop()
+    _get_decay_timer().stop()
 
 
 mcp = FastMCP("myelin", lifespan=_lifespan)
@@ -53,7 +52,6 @@ _hebbian: HebbianTracker | None = None
 _neocortex: SemanticNetwork | None = None
 _thalamus: ThalamicBuffer | None = None
 _decay_timer: DecayTimer | None = None
-_worker: BackgroundWorker | None = None
 _cfg: MyelinSettings = settings
 _store_count: int = 0
 
@@ -61,7 +59,7 @@ _store_count: int = 0
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
     global _cfg, _hippocampus, _hebbian, _neocortex
-    global _thalamus, _worker, _store_count
+    global _thalamus, _decay_timer, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
@@ -70,15 +68,12 @@ def configure(cfg: MyelinSettings) -> None:
         _thalamus.close()
     if _decay_timer is not None:
         _decay_timer.stop()
-    if _worker is not None:
-        _worker.stop()
     _cfg = cfg
     _hippocampus = None
     _hebbian = None
     _neocortex = None
     _thalamus = None
     _decay_timer = None
-    _worker = None
     _store_count = 0
 
 
@@ -127,16 +122,6 @@ def _get_decay_timer() -> DecayTimer:
             interval_hours=_cfg.decay_interval_hours,
         )
     return _decay_timer
-def _get_worker() -> BackgroundWorker:
-    global _worker
-    if _worker is None:
-        _worker = BackgroundWorker(
-            consolidate_fn=do_consolidate,
-            decay_fn=do_decay_sweep,
-            decay_interval_hours=_cfg.worker_decay_interval_hours,
-            queue_maxsize=_cfg.worker_queue_maxsize,
-        )
-    return _worker
 
 
 def warm_up() -> None:
@@ -151,11 +136,6 @@ def shutdown() -> None:
     if _decay_timer is not None:
         _decay_timer.stop()
         _decay_timer = None
-    global _hippocampus, _hebbian, _neocortex, _thalamus, _worker
-    logger.info("shutting down")
-    if _worker is not None:
-        _worker.stop()
-        _worker = None
     if _hippocampus is not None:
         if _hippocampus._reranker is not None:
             _hippocampus._reranker.close()
@@ -282,20 +262,12 @@ def do_store(
                 )
 
     # Auto-consolidation: replay into neocortex every N stores
-    # Auto-consolidation: submit to background worker every N stores.
-    # Falls back to inline if the worker is not running (e.g. during tests
-    # that call do_store directly without starting the server lifespan).
     _store_count += 1
     if _cfg.consolidation_interval > 0 and (
         _store_count % _cfg.consolidation_interval == 0
     ):
-        worker = _get_worker()
-        if worker.is_running:
-            queued = worker.submit_consolidate()
-            result["consolidation"] = "scheduled" if queued else "skipped"
-        else:
-            consolidation_result = do_consolidate()
-            result["consolidation"] = consolidation_result
+        consolidation_result = do_consolidate()
+        result["consolidation"] = consolidation_result
 
     return result
 
@@ -408,11 +380,8 @@ def do_status() -> dict[str, Any]:
     """Memory system status."""
     hc = _get_hippocampus()
     net = _get_neocortex()
-    integrity = hc.check_integrity()
     return {
-        "memory_count": integrity["memory_count"],
-        "summary_count": integrity["summary_count"],
-        "consistent": integrity["consistent"],
+        "memory_count": hc.count(),
         "pinned_count": _get_thalamus().pinned_count(),
         "entity_count": net.entity_count(),
         "relationship_count": net.relationship_count(),
@@ -422,7 +391,6 @@ def do_status() -> dict[str, Any]:
         "min_access_count": _cfg.min_access_count,
         "max_memories": _cfg.max_memories,
         "decay_timer_running": _get_decay_timer().is_running,
-        "worker": _get_worker().status(),
     }
 
 
