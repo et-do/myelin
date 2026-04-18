@@ -424,7 +424,7 @@ def do_debug_recall(
     if raw_results:
         raw_results = _get_hebbian().boost(raw_results)
 
-    results = [
+    results: list[dict[str, Any]] = [
         {
             "id": r.memory.id,
             "content": r.memory.content,
