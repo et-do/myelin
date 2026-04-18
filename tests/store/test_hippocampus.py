@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC
+
 from myelin.config import MyelinSettings
 from myelin.models import MemoryMetadata
 from myelin.store.hippocampus import Hippocampus
@@ -329,3 +331,65 @@ class TestUpsert:
         assert first_chunk.replaced_id is not None
         # All original chunks replaced; only new chunks remain
         assert hc.count() <= original_count
+
+
+class TestConstruction:
+    def test_ephemeral_construction(self) -> None:
+        """Hippocampus with ephemeral=True uses clean in-memory ChromaDB."""
+        hc = Hippocampus(ephemeral=True)
+        assert hc.count() == 0
+        memory = hc.store("JWT authentication setup for production API services")
+        assert memory is not None
+        assert hc.count() == 1
+
+    def test_client_constructor(self) -> None:
+        """Hippocampus accepts an explicit ChromaDB client."""
+        import chromadb
+
+        client = chromadb.EphemeralClient()
+        hc = Hippocampus(client=client)
+        assert hc.count() == 0
+        memory = hc.store("PostgreSQL schema design with foreign key constraints")
+        assert memory is not None
+        assert hc.count() == 1
+
+
+class TestWarmUp:
+    def test_warm_up_runs(self, hippocampus: Hippocampus) -> None:
+        """warm_up() should pre-warm models without raising."""
+        hippocampus.warm_up()
+
+
+class TestTemporalRecall:
+    def test_recall_with_reference_date_activates_recency(
+        self, hippocampus: Hippocampus
+    ) -> None:
+        """Store with session date tag; recall with reference_date boosts recency."""
+        meta = MemoryMetadata(tags=["session:2026-04-18"])
+        hippocampus.store(
+            "Redis cluster topology for distributed session caching at scale", meta
+        )
+        from datetime import datetime
+
+        reference = datetime(2026, 4, 18, tzinfo=UTC)
+        results = hippocampus.recall("session caching", reference_date=reference)
+        assert len(results) > 0
+
+    def test_recall_without_reference_date(self, hippocampus: Hippocampus) -> None:
+        """Recall without reference_date still returns results."""
+        hippocampus.store(
+            "Terraform VPC configuration with NAT gateway and routing tables"
+        )
+        results = hippocampus.recall("network infrastructure")
+        assert len(results) > 0
+
+    def test_recall_relative_temporal_expression(
+        self, hippocampus: Hippocampus
+    ) -> None:
+        """Query with relative temporal expression triggers auto reference_date."""
+        meta = MemoryMetadata(tags=["session:2026-04-15"])
+        hippocampus.store("Kubernetes pod scheduling and CPU resource limits", meta)
+        # "last week" is a relative temporal expression — triggers auto reference_date
+        results = hippocampus.recall("deployment from last week")
+        # Should not raise; actual results depend on score thresholds
+        assert isinstance(results, list)

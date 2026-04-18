@@ -6,6 +6,7 @@ import pytest
 
 from myelin.config import MyelinSettings
 from myelin.server import (
+    _signal_handler,
     configure,
     do_consolidate,
     do_decay_sweep,
@@ -13,6 +14,7 @@ from myelin.server import (
     do_recall,
     do_status,
     do_store,
+    warm_up,
 )
 
 
@@ -240,13 +242,14 @@ class TestDoDecaySweepWithStale:
 class TestDoStoreChunksAndReplace:
     def test_store_long_content_reports_chunks(self) -> None:
         """Multi-chunk content returns chunks count in result."""
-        # 3000 chars reliably triggers chunking (chunk_max_chars default ~1500)
-        long_content = "The authentication service " * 200
+        # Use paragraph-split content so chunk_text generates multiple segments
+        para1 = "The authentication service processes login requests. " * 10
+        para2 = "JWT tokens are validated using RS256 asymmetric keys. " * 10
+        long_content = para1 + "\n\n" + para2
         result = do_store(long_content)
         assert result["status"] == "stored"
-        # Chunked content reports chunks > 1
-        if "chunks" in result:
-            assert result["chunks"] > 1
+        assert "chunks" in result
+        assert result["chunks"] > 1
 
     def test_store_overwrite_returns_replaced(self) -> None:
         """store with overwrite=True on near-duplicate returns replaced key."""
@@ -280,3 +283,18 @@ class TestShutdown:
 
         srv.shutdown()
         srv.shutdown()  # should not raise
+
+
+class TestWarmUp:
+    def test_warm_up_runs_without_error(self) -> None:
+        """warm_up() pre-warms models; must not raise."""
+        warm_up()  # covers server.py line 112
+
+
+class TestSignalHandler:
+    def test_signal_handler_raises_system_exit(self) -> None:
+        """_signal_handler raises SystemExit on any signal."""
+        import pytest as _pytest
+
+        with _pytest.raises(SystemExit):
+            _signal_handler(15, None)  # covers server.py line 135
