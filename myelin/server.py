@@ -12,12 +12,14 @@ import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
 
 from .config import MyelinSettings, settings
+from .ingest import IngestResult, ingest_directory, ingest_file
 from .log import request_id, setup_logging
 from .models import MemoryMetadata, RecallResult
 from .recall import HebbianTracker, find_lru, find_stale
@@ -59,7 +61,7 @@ _store_count: int = 0
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
     global _cfg, _hippocampus, _hebbian, _neocortex
-    global _thalamus, _decay_timer, _store_count
+    global _thalamus, _decay_timer, _worker, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
@@ -193,10 +195,16 @@ def do_store(
     source: str = "",
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Store a memory. Returns dict with status."""
+    """Store a memory.
+
+    Always returns ``status``, ``id`` (``None`` when rejected), and
+    ``reason`` (``None`` on success) so callers have a stable shape to
+    pattern-match against without key-existence checks.
+    """
     if len(content) > _MAX_CONTENT_CHARS:
         return {
             "status": "rejected",
+            "id": None,
             "reason": f"content exceeds {_MAX_CONTENT_CHARS} char limit",
         }
     global _store_count
@@ -216,7 +224,11 @@ def do_store(
             "store rejected: too short or near-duplicate",
             extra={"project": project, "scope": scope},
         )
-        return {"status": "rejected", "reason": "too short or near-duplicate"}
+        return {
+            "status": "rejected",
+            "id": None,
+            "reason": "too short or near-duplicate",
+        }
     chunks_stored = hc.count() - count_before
     status = "updated" if memory.replaced_id else "stored"
     logger.info(
@@ -233,7 +245,7 @@ def do_store(
             "replaced_id": memory.replaced_id,
         },
     )
-    result: dict[str, Any] = {"id": memory.id, "status": status}
+    result: dict[str, Any] = {"id": memory.id, "status": status, "reason": None}
     if memory.replaced_id:
         result["replaced"] = memory.replaced_id
     if chunks_stored > 1:
@@ -405,6 +417,51 @@ def do_consolidate() -> dict[str, Any]:
         "memories_replayed": result.memories_replayed,
         "entities_found": result.entities_found,
         "relationships_created": result.relationships_created,
+    }
+
+
+def do_ingest(
+    path: str,
+    *,
+    project: str = "",
+    scope: str = "",
+    source: str = "ingest",
+    recursive: bool = True,
+) -> dict[str, Any]:
+    """Bulk-load content from a file or directory into memory.
+
+    Supports ``.txt``, ``.md`` (with optional YAML frontmatter), and
+    ``.json`` (array of objects with a ``"content"`` key, as produced by
+    ``myelin export``).  When *path* is a directory every supported file
+    under it is ingested.
+
+    Frontmatter metadata in Markdown/text files overrides the *project*,
+    *scope*, *language*, *memory_type*, *tags*, and *source* defaults.
+
+    Returns a summary dict with ``stored``, ``skipped``, and ``errors``.
+    """
+    p = Path(path)
+    if p.is_dir():
+        result: IngestResult = ingest_directory(
+            p,
+            store_fn=do_store,
+            default_project=project,
+            default_scope=scope,
+            default_source=source,
+            recursive=recursive,
+        )
+    else:
+        result = ingest_file(
+            p,
+            store_fn=do_store,
+            default_project=project,
+            default_scope=scope,
+            default_source=source,
+        )
+    return {
+        "stored": result.stored,
+        "skipped": result.skipped,
+        "errors": result.errors,
     }
 
 
@@ -731,6 +788,43 @@ def consolidate() -> str:
     """
     with _track("consolidate"):
         return json.dumps(do_consolidate())
+
+
+@mcp.tool()
+def ingest(
+    path: str,
+    project: str = "",
+    scope: str = "",
+    source: str = "ingest",
+    recursive: bool = True,
+) -> str:
+    """Bulk-load memories from a file or directory.
+
+    Supported formats:
+
+    - ``.txt`` / ``.md``: file body stored as one memory.  Optional YAML
+      frontmatter (between ``---`` delimiters) sets project, scope, language,
+      memory_type, tags, and source for that file.
+    - ``.json``: array of objects with a ``"content"`` key (same shape as
+      ``myelin export`` output).
+    - **directory**: recurse and ingest every supported file found.
+
+    Args:
+        path: Absolute or relative path to a file or directory.
+        project: Default project tag (overridden by per-file frontmatter).
+        scope: Default scope tag (overridden by per-file frontmatter).
+        source: Source label for all ingested memories.
+        recursive: Descend into subdirectories (default: true).
+
+    Returns:
+        JSON summary with stored, skipped, and errors counts.
+    """
+    with _track("ingest"):
+        return json.dumps(
+            do_ingest(
+                path, project=project, scope=scope, source=source, recursive=recursive
+            )
+        )
 
 
 @mcp.tool()
