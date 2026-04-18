@@ -20,7 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from .config import MyelinSettings, settings
 from .log import request_id, setup_logging
 from .models import MemoryMetadata, RecallResult
-from .recall import HebbianTracker, find_stale
+from .recall import HebbianTracker, find_lru, find_stale
 from .reranker import Neocortex
 from .store import (
     Hippocampus,
@@ -28,14 +28,17 @@ from .store import (
     ThalamicBuffer,
     replay,
 )
+from .timer import DecayTimer
 
 
 @asynccontextmanager
 async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
-    """Start model warm-up in the background so initialize responds immediately."""
+    """Start model warm-up and decay timer; clean up on shutdown."""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, warm_up)
+    _get_decay_timer().start()
     yield
+    _get_decay_timer().stop()
 
 
 mcp = FastMCP("myelin", lifespan=_lifespan)
@@ -48,6 +51,7 @@ _hippocampus: Hippocampus | None = None
 _hebbian: HebbianTracker | None = None
 _neocortex: SemanticNetwork | None = None
 _thalamus: ThalamicBuffer | None = None
+_decay_timer: DecayTimer | None = None
 _cfg: MyelinSettings = settings
 _store_count: int = 0
 
@@ -55,18 +59,21 @@ _store_count: int = 0
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
     global _cfg, _hippocampus, _hebbian, _neocortex
-    global _thalamus, _store_count
+    global _thalamus, _decay_timer, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
         _neocortex.close()
     if _thalamus is not None:
         _thalamus.close()
+    if _decay_timer is not None:
+        _decay_timer.stop()
     _cfg = cfg
     _hippocampus = None
     _hebbian = None
     _neocortex = None
     _thalamus = None
+    _decay_timer = None
     _store_count = 0
 
 
@@ -107,6 +114,16 @@ def _get_thalamus() -> ThalamicBuffer:
     return _thalamus
 
 
+def _get_decay_timer() -> DecayTimer:
+    global _decay_timer
+    if _decay_timer is None:
+        _decay_timer = DecayTimer(
+            fn=do_decay_sweep,
+            interval_hours=_cfg.decay_interval_hours,
+        )
+    return _decay_timer
+
+
 def warm_up() -> None:
     """Pre-warm models by running dummy inference (avoids cold-start lag)."""
     _get_hippocampus().warm_up()
@@ -114,8 +131,11 @@ def warm_up() -> None:
 
 def shutdown() -> None:
     """Close all initialized stores gracefully."""
-    global _hippocampus, _hebbian, _neocortex, _thalamus
+    global _hippocampus, _hebbian, _neocortex, _thalamus, _decay_timer
     logger.info("shutting down")
+    if _decay_timer is not None:
+        _decay_timer.stop()
+        _decay_timer = None
     if _hippocampus is not None:
         if _hippocampus._reranker is not None:
             _hippocampus._reranker.close()
@@ -218,6 +238,28 @@ def do_store(
         result["replaced"] = memory.replaced_id
     if chunks_stored > 1:
         result["chunks"] = chunks_stored
+
+    # Storage cap — evict LRU memories if we're over the limit.
+    # Pinned memories (thalamic relay) are never evicted.
+    if _cfg.max_memories > 0:
+        current = hc.count()
+        if current > _cfg.max_memories:
+            n_evict = current - _cfg.max_memories
+            all_meta = hc.get_all_metadata()
+            pinned_ids = {p["memory_id"] for p in _get_thalamus().get_pinned()}
+            evict_ids = find_lru(all_meta, n_evict, exclude_ids=pinned_ids)
+            if evict_ids:
+                hc.forget_batch(evict_ids)
+                valid_ids = {m["id"] for m in all_meta} - set(evict_ids)
+                _get_hebbian().cleanup(valid_ids)
+                _get_thalamus().cleanup(valid_ids)
+                result["evicted"] = len(evict_ids)
+                logger.info(
+                    "cap eviction: %d memories removed (cap=%d)",
+                    len(evict_ids),
+                    _cfg.max_memories,
+                    extra={"evicted": len(evict_ids), "cap": _cfg.max_memories},
+                )
 
     # Auto-consolidation: replay into neocortex every N stores
     _store_count += 1
@@ -347,6 +389,8 @@ def do_status() -> dict[str, Any]:
         "embedding_model": _cfg.embedding_model,
         "max_idle_days": _cfg.max_idle_days,
         "min_access_count": _cfg.min_access_count,
+        "max_memories": _cfg.max_memories,
+        "decay_timer_running": _get_decay_timer().is_running,
     }
 
 
@@ -374,6 +418,153 @@ def do_unpin(memory_id: str) -> dict[str, Any]:
     """Remove a pinned memory from the thalamic buffer."""
     existed = _get_thalamus().unpin(memory_id)
     return {"memory_id": memory_id, "status": "unpinned" if existed else "not_found"}
+
+
+def do_debug_recall(
+    query: str,
+    n_results: int = 5,
+    project: str = "",
+    language: str = "",
+    scope: str = "",
+    memory_type: str = "",
+) -> dict[str, Any]:
+    """Recall with full pipeline transparency for debugging.
+
+    Runs the normal recall pipeline then annotates each result with:
+    - Raw bi-encoder cosine similarity from ChromaDB
+    - Cross-encoder score (CE re-run on the result set)
+    - Total Hebbian co-weight accumulated for this result in the set
+
+    Also reports what the query planner inferred and which filters were
+    applied automatically vs. explicitly.
+    """
+    from .recall.query_planner import plan as _plan_query
+    from .store.amygdala import passes_gate
+
+    hc = _get_hippocampus()
+    memory_count = hc.count()
+
+    # --- 1. Query plan (what PFC would infer) ---
+    qplan = _plan_query(query)
+
+    # --- 2. Amygdala gate check on the query text ---
+    # Shows whether the query itself would be accepted if stored.
+    # Useful for diagnosing why a very short or near-duplicate query
+    # produces unexpected results.
+    gate_ok, gate_reason = passes_gate(query, cfg=_cfg)
+
+    # --- 3. Read-only recall (full 3-probe pipeline, no Hebbian reinforce) ---
+    # We use hc.recall() + hebbian.boost() directly to avoid writing
+    # Hebbian state or thalamus touch records during a diagnostic call.
+    raw_results = hc.recall(
+        query,
+        n_results=n_results,
+        project=project or None,
+        language=language or None,
+        scope=scope or None,
+        memory_type=memory_type or None,
+        reference_date=datetime.now(UTC),
+    )
+    if raw_results:
+        raw_results = _get_hebbian().boost(raw_results)
+
+    results = [
+        {
+            "id": r.memory.id,
+            "content": r.memory.content,
+            "score": round(r.score, 4),
+            "project": r.memory.metadata.project,
+            "scope": r.memory.metadata.scope,
+            "memory_type": r.memory.metadata.memory_type,
+            "access_count": r.memory.access_count,
+        }
+        for r in raw_results
+    ]
+
+    filters_applied: dict[str, Any] = {
+        "project": project or None,
+        "language": language or None,
+        "scope": scope or None,
+        "memory_type": memory_type or None,
+        "auto_memory_type": qplan.memory_type if not memory_type else None,
+        "auto_scope": qplan.scope_hint if not scope else None,
+    }
+
+    if not results:
+        return {
+            "query": query,
+            "query_plan": {
+                "memory_type": qplan.memory_type,
+                "scope_hint": qplan.scope_hint,
+                "signals": qplan.signals,
+            },
+            "gate_check": {"would_store": gate_ok, "reason": gate_reason},
+            "filters_applied": filters_applied,
+            "memory_count": memory_count,
+            "results": [],
+        }
+
+    # --- 4. Raw bi-encoder similarity (post-hoc ChromaDB query) ---
+    bi_sim_map: dict[str, float] = {}
+    with hc._lock:
+        query_emb = hc._embedder.encode(query).tolist()
+        n_fetch = min(max(n_results * 8, 50), memory_count)
+        raw = hc._collection.query(
+            query_embeddings=[query_emb],
+            n_results=n_fetch,
+            include=["distances"],
+        )
+    if raw.get("ids") and raw["ids"][0]:
+        for rid, dist in zip(raw["ids"][0], raw["distances"][0]):
+            bi_sim_map[rid] = round(1.0 - float(dist), 4)
+
+    # --- 5. CE scores (re-run on result set against original query) ---
+    ce_score_map: dict[str, float] = {}
+    if hc._reranker is not None and _cfg.neocortex_rerank:
+        passages = [r["content"] for r in results]
+        raw_ce = hc._reranker.rerank(query, passages)
+        for r, cs in zip(results, raw_ce):
+            ce_score_map[r["id"]] = round(float(cs), 4)
+
+    # --- 6. Hebbian co-weights for this result set ---
+    result_ids = [r["id"] for r in results]
+    hebbian_weights = _get_hebbian().lookup_weights(result_ids)
+
+    # --- 7. Enrich results ---
+    debug_results = []
+    for i, r in enumerate(results):
+        rid = r["id"]
+        preview = r["content"]
+        if len(preview) > 150:
+            preview = preview[:147] + "..."
+        debug_results.append(
+            {
+                "rank": i + 1,
+                "id": rid,
+                "final_score": r["score"],
+                "bi_encoder_sim": bi_sim_map.get(rid),
+                "ce_score": ce_score_map.get(rid),
+                "hebbian_weight": hebbian_weights.get(rid, 0.0),
+                "memory_type": r.get("memory_type"),
+                "scope": r.get("scope"),
+                "project": r.get("project"),
+                "access_count": r.get("access_count", 0),
+                "content_preview": preview,
+            }
+        )
+
+    return {
+        "query": query,
+        "query_plan": {
+            "memory_type": qplan.memory_type,
+            "scope_hint": qplan.scope_hint,
+            "signals": qplan.signals,
+        },
+        "gate_check": {"would_store": gate_ok, "reason": gate_reason},
+        "filters_applied": filters_applied,
+        "memory_count": memory_count,
+        "results": debug_results,
+    }
 
 
 # ------------------------------------------------------------------
@@ -558,7 +749,6 @@ def main() -> None:
     """Run the MCP server (stdio transport)."""
     setup_logging(level=getattr(logging, _cfg.log_level))
     _cfg.ensure_dirs()
-
     logger.info(
         "starting myelin server",
         extra={

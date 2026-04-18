@@ -72,6 +72,14 @@ class MyelinSettings(BaseSettings):
     neocortex_rerank: bool = True  # enable cross-encoder re-ranking
     neocortex_weight: float = 0.6  # blending weight (0=bi-encoder only, 1=CE only)
 
+    # Storage cap — hard limit on total memories; 0 = disabled
+    # When exceeded after a store, least-recently-used memories are evicted.
+    # Pinned memories (thalamic relay) are never evicted.
+    max_memories: int = 0
+
+    # Auto-decay timer — run decay sweep every N hours in the background; 0 = disabled
+    decay_interval_hours: float = 0.0
+
     # Auto-consolidation — replay after N stores (0 = disabled)
     consolidation_interval: int = 50
 
@@ -115,9 +123,17 @@ class MyelinSettings(BaseSettings):
             raise ValueError(msg)
         return v
 
-    @field_validator("consolidation_interval")
+    @field_validator("consolidation_interval", "max_memories")
     @classmethod
     def _non_negative_int(cls, v: int) -> int:
+        if v < 0:
+            msg = f"must be >= 0, got {v}"
+            raise ValueError(msg)
+        return v
+
+    @field_validator("decay_interval_hours")
+    @classmethod
+    def _non_negative_decay_interval(cls, v: float) -> float:
         if v < 0:
             msg = f"must be >= 0, got {v}"
             raise ValueError(msg)

@@ -51,8 +51,8 @@
 - [ ] Never run any background task inline with store() or recall()
 
 ### Unbounded growth
-- [ ] Add hard storage cap (configurable max memories) with LRU eviction
-- [ ] Auto-decay on background timer (not manual CLI)
+- [x] Add hard storage cap (configurable max memories) with LRU eviction
+- [x] Auto-decay on background timer (not manual CLI)
 - [x] Fix immortal memory bug: access_count >= 2 should NOT exempt from all decay — added `max_idle_days_absolute=365` hard cap
 - [ ] Periodic dedup sweep — find and merge near-duplicate memories that slipped past gate
 - [ ] ChromaDB HNSW compaction (rebuild index after large deletes)

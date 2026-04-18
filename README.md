@@ -732,6 +732,8 @@ All parameters use environment variables with a `MYELIN_` prefix. Defaults work 
 |-----------|---------|-----------------|
 | `max_idle_days` | `90` | Days of inactivity before pruning eligibility |
 | `min_access_count` | `2` | Accesses needed to survive pruning |
+| `max_memories` | `0` | Hard memory cap; 0 disables. When exceeded, least-recently-used memories are evicted (pinned memories are never evicted) |
+| `decay_interval_hours` | `0` | Auto-decay sweep interval in hours; 0 disables background timer |
 | `hebbian_delta` | `0.1` | Co-access weight increment |
 | `hebbian_scale` | `0.1` | Logarithmic boost scale |
 | `thalamus_recency_limit` | `20` | Recency buffer size |
