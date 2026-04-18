@@ -105,23 +105,6 @@ class HebbianTracker:
 
         return sorted(results, key=lambda r: r.score, reverse=True)
 
-    def cleanup(self, valid_ids: set[str]) -> int:
-        """Remove co-access entries referencing deleted memories."""
-        with self._lock:
-            stale = [
-                (row[0], row[1])
-                for row in self.db.execute(
-                    "SELECT id_a, id_b FROM co_access"
-                ).fetchall()
-                if row[0] not in valid_ids or row[1] not in valid_ids
-            ]
-            for a, b in stale:
-                self.db.execute(
-                    "DELETE FROM co_access WHERE id_a = ? AND id_b = ?",
-                    [a, b],
-                )
-            return len(stale)
-
     def lookup_weights(self, ids: list[str]) -> dict[str, float]:
         """Return the total Hebbian co-weight for each ID in *ids*.
 
@@ -152,3 +135,20 @@ class HebbianTracker:
                 total += weights.get((a, b), 0.0)
             result[mid] = round(total, 4)
         return result
+
+    def cleanup(self, valid_ids: set[str]) -> int:
+        """Remove co-access entries referencing deleted memories."""
+        with self._lock:
+            stale = [
+                (row[0], row[1])
+                for row in self.db.execute(
+                    "SELECT id_a, id_b FROM co_access"
+                ).fetchall()
+                if row[0] not in valid_ids or row[1] not in valid_ids
+            ]
+            for a, b in stale:
+                self.db.execute(
+                    "DELETE FROM co_access WHERE id_a = ? AND id_b = ?",
+                    [a, b],
+                )
+            return len(stale)

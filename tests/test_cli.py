@@ -25,11 +25,9 @@ class TestCmdStatus:
             main()
         out = capsys.readouterr().out
         assert "memory_count" in out
-        assert "summary_count" in out
-        assert "consistent" in out
         assert "data_dir" in out
         assert "embedding_model" in out
-        assert "worker" in out
+        assert "decay_timer_running" in out
 
     def test_status_shows_zero_count(self, capsys: pytest.CaptureFixture[str]) -> None:
         with patch("sys.argv", ["myelin", "status"]):

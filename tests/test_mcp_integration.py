@@ -103,22 +103,28 @@ class TestMcpServerStartup:
         assert len(results) >= 1
         assert any("canary" in r["content"] for r in results)
 
-    def test_status_includes_worker_info(self, tmp_path: Path) -> None:
-        """status tool response includes background worker health info."""
+    def test_status_includes_decay_timer_info(self, tmp_path: Path) -> None:
+        """status tool response includes decay timer field."""
 
         async def _run() -> dict:  # type: ignore[type-arg]
-            async with stdio_client(_server_params(tmp_path)) as (r, w):
+            # Pass a non-zero interval so the timer actually starts.
+            env = {
+                **os.environ,
+                "MYELIN_DATA_DIR": str(tmp_path),
+                "MYELIN_DECAY_INTERVAL_HOURS": "24",
+            }
+            params = StdioServerParameters(
+                command="uv", args=["run", "myelin", "serve"], env=env
+            )
+            async with stdio_client(params) as (r, w):
                 async with ClientSession(r, w) as session:
                     await session.initialize()
                     result = await session.call_tool("status", {})
                     return json.loads(result.content[0].text)  # type: ignore[index]
 
         data = anyio.run(_run)
-        assert "worker" in data, "status response is missing 'worker' key"
-        worker = data["worker"]
-        assert "running" in worker
-        assert "queue_depth" in worker
-        assert "last_consolidation_at" in worker
-        assert "last_decay_at" in worker
-        # Worker should be running because the MCP lifespan starts it
-        assert worker["running"] is True
+        assert "decay_timer_running" in data, (
+            "status response is missing 'decay_timer_running' key"
+        )
+        # Timer should be running; lifespan starts it (non-zero interval configured)
+        assert data["decay_timer_running"] is True

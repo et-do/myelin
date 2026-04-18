@@ -20,7 +20,7 @@ from mcp.server.fastmcp import FastMCP
 from .config import MyelinSettings, settings
 from .log import request_id, setup_logging
 from .models import MemoryMetadata, RecallResult
-from .recall import HebbianTracker, find_stale
+from .recall import HebbianTracker, find_lru, find_stale
 from .reranker import Neocortex
 from .store import (
     Hippocampus,
@@ -28,17 +28,17 @@ from .store import (
     ThalamicBuffer,
     replay,
 )
-from .worker import BackgroundWorker
+from .timer import DecayTimer
 
 
 @asynccontextmanager
 async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
-    """Start model warm-up and background worker; clean up on shutdown."""
+    """Start model warm-up and decay timer; clean up on shutdown."""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, warm_up)
-    _get_worker().start()
+    _get_decay_timer().start()
     yield
-    _get_worker().stop()
+    _get_decay_timer().stop()
 
 
 mcp = FastMCP("myelin", lifespan=_lifespan)
@@ -51,7 +51,7 @@ _hippocampus: Hippocampus | None = None
 _hebbian: HebbianTracker | None = None
 _neocortex: SemanticNetwork | None = None
 _thalamus: ThalamicBuffer | None = None
-_worker: BackgroundWorker | None = None
+_decay_timer: DecayTimer | None = None
 _cfg: MyelinSettings = settings
 _store_count: int = 0
 
@@ -59,21 +59,21 @@ _store_count: int = 0
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
     global _cfg, _hippocampus, _hebbian, _neocortex
-    global _thalamus, _worker, _store_count
+    global _thalamus, _decay_timer, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
         _neocortex.close()
     if _thalamus is not None:
         _thalamus.close()
-    if _worker is not None:
-        _worker.stop()
+    if _decay_timer is not None:
+        _decay_timer.stop()
     _cfg = cfg
     _hippocampus = None
     _hebbian = None
     _neocortex = None
     _thalamus = None
-    _worker = None
+    _decay_timer = None
     _store_count = 0
 
 
@@ -114,16 +114,14 @@ def _get_thalamus() -> ThalamicBuffer:
     return _thalamus
 
 
-def _get_worker() -> BackgroundWorker:
-    global _worker
-    if _worker is None:
-        _worker = BackgroundWorker(
-            consolidate_fn=do_consolidate,
-            decay_fn=do_decay_sweep,
-            decay_interval_hours=_cfg.worker_decay_interval_hours,
-            queue_maxsize=_cfg.worker_queue_maxsize,
+def _get_decay_timer() -> DecayTimer:
+    global _decay_timer
+    if _decay_timer is None:
+        _decay_timer = DecayTimer(
+            fn=do_decay_sweep,
+            interval_hours=_cfg.decay_interval_hours,
         )
-    return _worker
+    return _decay_timer
 
 
 def warm_up() -> None:
@@ -133,11 +131,11 @@ def warm_up() -> None:
 
 def shutdown() -> None:
     """Close all initialized stores gracefully."""
-    global _hippocampus, _hebbian, _neocortex, _thalamus, _worker
+    global _hippocampus, _hebbian, _neocortex, _thalamus, _decay_timer
     logger.info("shutting down")
-    if _worker is not None:
-        _worker.stop()
-        _worker = None
+    if _decay_timer is not None:
+        _decay_timer.stop()
+        _decay_timer = None
     if _hippocampus is not None:
         if _hippocampus._reranker is not None:
             _hippocampus._reranker.close()
@@ -241,20 +239,35 @@ def do_store(
     if chunks_stored > 1:
         result["chunks"] = chunks_stored
 
-    # Auto-consolidation: submit to background worker every N stores.
-    # Falls back to inline if the worker is not running (e.g. during tests
-    # that call do_store directly without starting the server lifespan).
+    # Storage cap — evict LRU memories if we're over the limit.
+    # Pinned memories (thalamic relay) are never evicted.
+    if _cfg.max_memories > 0:
+        current = hc.count()
+        if current > _cfg.max_memories:
+            n_evict = current - _cfg.max_memories
+            all_meta = hc.get_all_metadata()
+            pinned_ids = {p["memory_id"] for p in _get_thalamus().get_pinned()}
+            evict_ids = find_lru(all_meta, n_evict, exclude_ids=pinned_ids)
+            if evict_ids:
+                hc.forget_batch(evict_ids)
+                valid_ids = {m["id"] for m in all_meta} - set(evict_ids)
+                _get_hebbian().cleanup(valid_ids)
+                _get_thalamus().cleanup(valid_ids)
+                result["evicted"] = len(evict_ids)
+                logger.info(
+                    "cap eviction: %d memories removed (cap=%d)",
+                    len(evict_ids),
+                    _cfg.max_memories,
+                    extra={"evicted": len(evict_ids), "cap": _cfg.max_memories},
+                )
+
+    # Auto-consolidation: replay into neocortex every N stores
     _store_count += 1
     if _cfg.consolidation_interval > 0 and (
         _store_count % _cfg.consolidation_interval == 0
     ):
-        worker = _get_worker()
-        if worker.is_running:
-            queued = worker.submit_consolidate()
-            result["consolidation"] = "scheduled" if queued else "skipped"
-        else:
-            consolidation_result = do_consolidate()
-            result["consolidation"] = consolidation_result
+        consolidation_result = do_consolidate()
+        result["consolidation"] = consolidation_result
 
     return result
 
@@ -367,11 +380,8 @@ def do_status() -> dict[str, Any]:
     """Memory system status."""
     hc = _get_hippocampus()
     net = _get_neocortex()
-    integrity = hc.check_integrity()
     return {
-        "memory_count": integrity["memory_count"],
-        "summary_count": integrity["summary_count"],
-        "consistent": integrity["consistent"],
+        "memory_count": hc.count(),
         "pinned_count": _get_thalamus().pinned_count(),
         "entity_count": net.entity_count(),
         "relationship_count": net.relationship_count(),
@@ -379,7 +389,8 @@ def do_status() -> dict[str, Any]:
         "embedding_model": _cfg.embedding_model,
         "max_idle_days": _cfg.max_idle_days,
         "min_access_count": _cfg.min_access_count,
-        "worker": _get_worker().status(),
+        "max_memories": _cfg.max_memories,
+        "decay_timer_running": _get_decay_timer().is_running,
     }
 
 
