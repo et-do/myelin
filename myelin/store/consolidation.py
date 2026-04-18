@@ -55,9 +55,6 @@ _TECH_PATTERN = re.compile(r"\b([A-Z][a-z]+[A-Z]\w+|[A-Z]{2,}(?:_[A-Z]{2,})*)\b"
 # Simple quoted terms — "JWT", "OAuth 2.0"
 _QUOTED_PATTERN = re.compile(r'"([^"]{2,40})"')
 
-# Filter out common English words that match name patterns
-# (uses the canonical stop-word list from entorhinal, all lowercase)
-
 
 def extract_entities(text: str) -> list[str]:
     """Extract candidate entity names from text.
