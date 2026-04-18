@@ -102,3 +102,23 @@ class TestMcpServerStartup:
         assert status == "stored"
         assert len(results) >= 1
         assert any("canary" in r["content"] for r in results)
+
+    def test_status_includes_worker_info(self, tmp_path: Path) -> None:
+        """status tool response includes background worker health info."""
+
+        async def _run() -> dict:  # type: ignore[type-arg]
+            async with stdio_client(_server_params(tmp_path)) as (r, w):
+                async with ClientSession(r, w) as session:
+                    await session.initialize()
+                    result = await session.call_tool("status", {})
+                    return json.loads(result.content[0].text)  # type: ignore[index]
+
+        data = anyio.run(_run)
+        assert "worker" in data, "status response is missing 'worker' key"
+        worker = data["worker"]
+        assert "running" in worker
+        assert "queue_depth" in worker
+        assert "last_consolidation_at" in worker
+        assert "last_decay_at" in worker
+        # Worker should be running because the MCP lifespan starts it
+        assert worker["running"] is True
