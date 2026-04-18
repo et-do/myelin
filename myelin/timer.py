@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import threading
 from collections.abc import Callable
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -21,7 +22,7 @@ class DecayTimer:
     - ``stop()`` signals the thread and waits up to 2 s for a clean shutdown.
     """
 
-    def __init__(self, fn: Callable[[], None], interval_hours: float) -> None:
+    def __init__(self, fn: Callable[[], Any], interval_hours: float) -> None:
         self._fn = fn
         self._interval = interval_hours * 3600.0
         self._stop = threading.Event()
