@@ -64,7 +64,9 @@ _STOP_WORDS: frozenset[str] = frozenset(
     "wouldn't you you'd you'll you're you've your yours yourself yourselves "
     "also just like really right well yeah yes know think going "
     "want need help make sure thing things way good great "
-    "user assistant human system ai".split()
+    "user assistant human system ai "
+    "thanks thank hello hi hey ok okay "
+    "however meanwhile therefore furthermore additionally".split()
 )
 
 _WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_'-]{2,}")

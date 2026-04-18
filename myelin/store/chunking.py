@@ -22,6 +22,9 @@ from __future__ import annotations
 import re
 from collections import Counter
 
+from .entorhinal import _STOP_WORDS as _CHUNK_STOP
+from .entorhinal import _WORD_RE as _CHUNK_WORD_RE
+
 _ROLE_PATTERN = re.compile(
     r"^(user|assistant|human|ai|system)\s*:",
     re.MULTILINE | re.IGNORECASE,
@@ -39,24 +42,6 @@ _NAMED_SPEAKER_PATTERN = re.compile(
 _DEFAULT_MAX_CHARS = 1000
 _DEFAULT_OVERLAP_CHARS = 200
 _TOPIC_SHIFT_THRESHOLD = 0.15  # Jaccard overlap below this → topic shift
-
-# Lightweight keyword extraction for topic-shift detection
-# Avoids importing entorhinal to keep the module self-contained
-_CHUNK_STOP = frozenset(
-    "a about above after again against all am an and any are as at be "
-    "because been before being below between both but by can could did do "
-    "does doing down during each few for from further get got had has have "
-    "having he her here hers herself him himself his how i if in into is "
-    "it its itself just let me more most my myself no nor not of off on "
-    "once only or other our ours ourselves out over own same she should "
-    "so some such than that the their theirs them themselves then there "
-    "these they this those through to too under until up us very was we "
-    "were what when where which while who whom why will with would you "
-    "your yours yourself yourselves also like really right well yeah yes "
-    "know think going want need help make sure thing things way good great "
-    "user assistant human system ai thanks thank hello hi hey ok okay".split()
-)
-_CHUNK_WORD_RE = re.compile(r"[a-zA-Z][a-zA-Z0-9_'-]{2,}")
 
 
 def _turn_keywords(text: str) -> set[str]:
