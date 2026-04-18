@@ -198,6 +198,23 @@ class TestShutdown:
             mock_neo.assert_called_once()
             mock_thal.assert_called_once()
 
+        # Worker should also be cleared
+        assert srv._worker is None
+
+    def test_shutdown_stops_running_worker(self, tmp_settings: MyelinSettings) -> None:
+        """shutdown() stops the background worker if it is running."""
+        configure(tmp_settings)
+
+        import myelin.server as srv
+
+        worker = srv._get_worker()
+        worker.start()
+        assert worker.is_running
+
+        shutdown()
+        assert not worker.is_running
+        assert srv._worker is None
+
     def test_shutdown_tolerates_uninitialized(self) -> None:
         """shutdown() is safe to call when nothing is initialized."""
         configure(MyelinSettings(data_dir="/tmp/myelin_test_empty"))

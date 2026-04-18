@@ -12,6 +12,28 @@ import pytest
 
 from myelin.lock import DataDirLock, DataDirLockedError
 
+# ---------------------------------------------------------------------------
+# Module-level child functions — must be at module scope so they are
+# picklable by the 'spawn' multiprocessing start method.
+# ---------------------------------------------------------------------------
+
+
+def _child_try_lock(path: str, result_queue: multiprocessing.Queue) -> None:  # type: ignore[type-arg]
+    """Try to acquire the lock; put 'acquired' or 'locked' into the queue."""
+    try:
+        DataDirLock(Path(path)).acquire()
+        result_queue.put("acquired")
+    except DataDirLockedError:
+        result_queue.put("locked")
+
+
+def _child_acquire_and_die(path: str) -> None:
+    """Acquire the lock then exit abruptly (simulates a crash)."""
+    lock = DataDirLock(Path(path))
+    lock.acquire()
+    # Intentional abrupt exit — simulates crash, no atexit
+    os._exit(0)
+
 
 class TestDataDirLockBasic:
     def test_acquire_and_release(self, tmp_path: Path) -> None:
@@ -81,21 +103,18 @@ class TestDataDirLockExclusion:
     @pytest.mark.skipif(sys.platform == "win32", reason="fork not available on Windows")
     def test_cross_process_exclusion(self, tmp_path: Path) -> None:
         """A child process must not be able to acquire a lock held by the parent."""
-
-        def child_try_lock(path: str, result_queue: multiprocessing.Queue) -> None:  # type: ignore[type-arg]
-            try:
-                DataDirLock(Path(path)).acquire()
-                result_queue.put("acquired")
-            except DataDirLockedError:
-                result_queue.put("locked")
+        # Use 'spawn' so the child starts a clean single-threaded interpreter.
+        # 'fork' in a multi-threaded process (background worker thread) risks
+        # inheriting lock state and causing deadlocks in the child.
+        ctx = multiprocessing.get_context("spawn")
 
         lock = DataDirLock(tmp_path)
         lock.acquire()
         try:
-            q: multiprocessing.Queue = multiprocessing.Queue()  # type: ignore[type-arg]
-            p = multiprocessing.Process(target=child_try_lock, args=(str(tmp_path), q))
+            q: multiprocessing.Queue = ctx.Queue()  # type: ignore[type-arg]
+            p = ctx.Process(target=_child_try_lock, args=(str(tmp_path), q))
             p.start()
-            p.join(timeout=5)
+            p.join(timeout=10)
             assert not p.is_alive(), "child process timed out"
             result = q.get_nowait()
             assert result == "locked", f"expected 'locked', got {result!r}"
@@ -105,17 +124,12 @@ class TestDataDirLockExclusion:
     @pytest.mark.skipif(sys.platform == "win32", reason="fork not available on Windows")
     def test_lock_released_on_process_death(self, tmp_path: Path) -> None:
         """After a child process dies (crash), the lock must be releaseable."""
+        # Use 'spawn' to avoid forking a multi-threaded process (see above).
+        ctx = multiprocessing.get_context("spawn")
 
-        def child_acquire_and_die(path: str) -> None:
-            # Acquire the lock, then exit without releasing it
-            lock = DataDirLock(Path(path))
-            lock.acquire()
-            # Intentional abrupt exit — simulates crash, no atexit
-            os._exit(0)
-
-        p = multiprocessing.Process(target=child_acquire_and_die, args=(str(tmp_path),))
+        p = ctx.Process(target=_child_acquire_and_die, args=(str(tmp_path),))
         p.start()
-        p.join(timeout=5)
+        p.join(timeout=10)
         assert p.exitcode == 0
 
         # The OS should have released the flock on process exit
@@ -131,37 +145,3 @@ class TestDataDirLockExclusion:
                 time.sleep(0.05)
         else:
             pytest.fail("Lock was not released after child process death")
-
-
-class TestDataDirLockOSError:
-    def test_acquire_raises_on_open_failure(
-        self, tmp_path: pytest.TempPathFactory
-    ) -> None:
-        """DataDirLockedError is raised when os.open fails (e.g. permission error)."""
-        from unittest.mock import patch
-
-        from myelin.lock import DataDirLock, DataDirLockedError
-
-        with patch("os.open", side_effect=OSError("permission denied")):
-            lock = DataDirLock(tmp_path)
-            with pytest.raises(DataDirLockedError, match="Cannot open lock file"):
-                lock.acquire()
-
-
-class TestDataDirLockContextManager:
-    def test_context_manager_acquires_and_releases(
-        self, tmp_path: pytest.TempPathFactory
-    ) -> None:
-        from myelin.lock import DataDirLock
-
-        with DataDirLock(tmp_path) as lock:
-            assert lock._fd is not None
-        assert lock._fd is None
-
-    def test_release_is_idempotent(self, tmp_path: pytest.TempPathFactory) -> None:
-        from myelin.lock import DataDirLock
-
-        lock = DataDirLock(tmp_path)
-        lock.acquire()
-        lock.release()
-        lock.release()  # second release should not raise

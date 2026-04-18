@@ -15,22 +15,11 @@ suppress_noisy_loggers()
 
 
 def cmd_status(_args: argparse.Namespace) -> None:
-    from .store import Hippocampus
+    from .server import configure, do_status
 
-    hc = Hippocampus()
-    integrity = hc.check_integrity()
-    print(
-        json.dumps(
-            {
-                "memory_count": integrity["memory_count"],
-                "summary_count": integrity["summary_count"],
-                "consistent": integrity["consistent"],
-                "data_dir": str(settings.data_dir),
-                "embedding_model": settings.embedding_model,
-            },
-            indent=2,
-        )
-    )
+    configure(settings)
+    result = do_status()
+    print(json.dumps(result, indent=2))
 
 
 def cmd_decay(_args: argparse.Namespace) -> None:
