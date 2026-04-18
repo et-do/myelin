@@ -61,6 +61,7 @@ jobs:
       - run: uv sync --extra dev
       - name: Run latency benchmarks
         run: |
+          mkdir -p benchmarks/perf
           uv run pytest tests/benchmarks/test_latency.py \
             -p no:xdist \
             --override-ini="addopts=" \
