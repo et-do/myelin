@@ -376,6 +376,153 @@ def do_unpin(memory_id: str) -> dict[str, Any]:
     return {"memory_id": memory_id, "status": "unpinned" if existed else "not_found"}
 
 
+def do_debug_recall(
+    query: str,
+    n_results: int = 5,
+    project: str = "",
+    language: str = "",
+    scope: str = "",
+    memory_type: str = "",
+) -> dict[str, Any]:
+    """Recall with full pipeline transparency for debugging.
+
+    Runs the normal recall pipeline then annotates each result with:
+    - Raw bi-encoder cosine similarity from ChromaDB
+    - Cross-encoder score (CE re-run on the result set)
+    - Total Hebbian co-weight accumulated for this result in the set
+
+    Also reports what the query planner inferred and which filters were
+    applied automatically vs. explicitly.
+    """
+    from .recall.query_planner import plan as _plan_query
+    from .store.amygdala import passes_gate
+
+    hc = _get_hippocampus()
+    memory_count = hc.count()
+
+    # --- 1. Query plan (what PFC would infer) ---
+    qplan = _plan_query(query)
+
+    # --- 2. Amygdala gate check on the query text ---
+    # Shows whether the query itself would be accepted if stored.
+    # Useful for diagnosing why a very short or near-duplicate query
+    # produces unexpected results.
+    gate_ok, gate_reason = passes_gate(query, cfg=_cfg)
+
+    # --- 3. Read-only recall (full 3-probe pipeline, no Hebbian reinforce) ---
+    # We use hc.recall() + hebbian.boost() directly to avoid writing
+    # Hebbian state or thalamus touch records during a diagnostic call.
+    raw_results = hc.recall(
+        query,
+        n_results=n_results,
+        project=project or None,
+        language=language or None,
+        scope=scope or None,
+        memory_type=memory_type or None,
+        reference_date=datetime.now(UTC),
+    )
+    if raw_results:
+        raw_results = _get_hebbian().boost(raw_results)
+
+    results = [
+        {
+            "id": r.memory.id,
+            "content": r.memory.content,
+            "score": round(r.score, 4),
+            "project": r.memory.metadata.project,
+            "scope": r.memory.metadata.scope,
+            "memory_type": r.memory.metadata.memory_type,
+            "access_count": r.memory.access_count,
+        }
+        for r in raw_results
+    ]
+
+    filters_applied: dict[str, Any] = {
+        "project": project or None,
+        "language": language or None,
+        "scope": scope or None,
+        "memory_type": memory_type or None,
+        "auto_memory_type": qplan.memory_type if not memory_type else None,
+        "auto_scope": qplan.scope_hint if not scope else None,
+    }
+
+    if not results:
+        return {
+            "query": query,
+            "query_plan": {
+                "memory_type": qplan.memory_type,
+                "scope_hint": qplan.scope_hint,
+                "signals": qplan.signals,
+            },
+            "gate_check": {"would_store": gate_ok, "reason": gate_reason},
+            "filters_applied": filters_applied,
+            "memory_count": memory_count,
+            "results": [],
+        }
+
+    # --- 4. Raw bi-encoder similarity (post-hoc ChromaDB query) ---
+    bi_sim_map: dict[str, float] = {}
+    with hc._lock:
+        query_emb = hc._embedder.encode(query).tolist()
+        n_fetch = min(max(n_results * 8, 50), memory_count)
+        raw = hc._collection.query(
+            query_embeddings=[query_emb],
+            n_results=n_fetch,
+            include=["distances"],
+        )
+    if raw.get("ids") and raw["ids"][0]:
+        for rid, dist in zip(raw["ids"][0], raw["distances"][0]):
+            bi_sim_map[rid] = round(1.0 - float(dist), 4)
+
+    # --- 5. CE scores (re-run on result set against original query) ---
+    ce_score_map: dict[str, float] = {}
+    if hc._reranker is not None and _cfg.neocortex_rerank:
+        passages = [r["content"] for r in results]
+        raw_ce = hc._reranker.rerank(query, passages)
+        for r, cs in zip(results, raw_ce):
+            ce_score_map[r["id"]] = round(float(cs), 4)
+
+    # --- 6. Hebbian co-weights for this result set ---
+    result_ids = [r["id"] for r in results]
+    hebbian_weights = _get_hebbian().lookup_weights(result_ids)
+
+    # --- 7. Enrich results ---
+    debug_results = []
+    for i, r in enumerate(results):
+        rid = r["id"]
+        preview = r["content"]
+        if len(preview) > 150:
+            preview = preview[:147] + "..."
+        debug_results.append(
+            {
+                "rank": i + 1,
+                "id": rid,
+                "final_score": r["score"],
+                "bi_encoder_sim": bi_sim_map.get(rid),
+                "ce_score": ce_score_map.get(rid),
+                "hebbian_weight": hebbian_weights.get(rid, 0.0),
+                "memory_type": r.get("memory_type"),
+                "scope": r.get("scope"),
+                "project": r.get("project"),
+                "access_count": r.get("access_count", 0),
+                "content_preview": preview,
+            }
+        )
+
+    return {
+        "query": query,
+        "query_plan": {
+            "memory_type": qplan.memory_type,
+            "scope_hint": qplan.scope_hint,
+            "signals": qplan.signals,
+        },
+        "gate_check": {"would_store": gate_ok, "reason": gate_reason},
+        "filters_applied": filters_applied,
+        "memory_count": memory_count,
+        "results": debug_results,
+    }
+
+
 # ------------------------------------------------------------------
 # MCP tool wrappers (thin JSON serialization layer)
 # ------------------------------------------------------------------
@@ -558,7 +705,6 @@ def main() -> None:
     """Run the MCP server (stdio transport)."""
     setup_logging(level=getattr(logging, _cfg.log_level))
     _cfg.ensure_dirs()
-
     logger.info(
         "starting myelin server",
         extra={

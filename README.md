@@ -569,7 +569,23 @@ myelin decay        # Prune stale memories
 myelin consolidate  # Replay episodes into semantic network
 myelin export out.json  # Export all memories to JSON
 myelin import out.json  # Import memories from JSON
+myelin debug-recall "your query"  # Full pipeline breakdown for debugging
 ```
+
+The `debug-recall` command runs a recall query and shows exactly what happened at each stage of the pipeline:
+
+```
+myelin debug-recall "what auth approach did we pick?" [-n N] [--project P] [--scope S] [--memory-type T] [--json]
+```
+
+Output includes:
+- **Query plan** — what the PFC query planner inferred (memory type, scope, signals)
+- **Amygdala gate** — whether the query would be accepted if stored
+- **Results** with per-result score breakdown:
+  - `bi` — raw bi-encoder cosine similarity from ChromaDB
+  - `ce` — cross-encoder re-rank score
+  - `hebbian` — co-access weight accumulated from prior co-recalls
+  - `final_score` — after Hebbian boost (the score used for ranking)
 
 > [!NOTE]
 > If running from a dev checkout instead of an installed package, prefix with `uv run`: `uv run myelin status`
