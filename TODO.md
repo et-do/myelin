@@ -133,7 +133,7 @@
 - [x] Export/import memories (JSON) for portability and backup — `myelin export`/`myelin import` CLI commands
 - [ ] Point-in-time backup strategy (ChromaDB snapshot + SQLite backup)
 - [ ] Memory versioning — when a preference updates, keep history (not just overwrite)
-- [ ] CLI command: `myelin debug-recall "query"` — show full ranking breakdown for debugging
+- [x] CLI command: `myelin debug-recall "query"` — show full ranking breakdown for debugging
 
 ## P3 — Performance tuning (after production basics)
 
