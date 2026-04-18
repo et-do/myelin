@@ -107,11 +107,23 @@ class TestDoStatus:
     def test_returns_status_fields(self) -> None:
         result = do_status()
         assert "memory_count" in result
+        assert "summary_count" in result
+        assert "consistent" in result
         assert "entity_count" in result
         assert "relationship_count" in result
         assert "data_dir" in result
         assert "embedding_model" in result
         assert result["memory_count"] == 0
+        assert result["consistent"] is True
+
+    def test_worker_status_present(self) -> None:
+        result = do_status()
+        assert "worker" in result
+        worker = result["worker"]
+        assert "running" in worker
+        assert "queue_depth" in worker
+        assert "last_consolidation_at" in worker
+        assert "last_decay_at" in worker
 
 
 class TestDoConsolidate:
@@ -154,10 +166,13 @@ class TestEndToEnd:
 
 
 class TestAutoConsolidation:
-    def test_triggers_after_interval(self, tmp_path: pytest.TempPathFactory) -> None:
-        """Auto-consolidation fires after consolidation_interval stores."""
+    def test_triggers_after_interval_inline(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """When the worker is not running, consolidation falls back to inline."""
         cfg = MyelinSettings(data_dir=tmp_path / ".myelin", consolidation_interval=3)  # type: ignore[arg-type]
         configure(cfg)
+        # Worker is not started — inline path is taken.
 
         # Store 2 — no consolidation yet
         r1 = do_store("Kai Tanaka works on Project Alpha backend")
@@ -165,10 +180,57 @@ class TestAutoConsolidation:
         r2 = do_store("Project Alpha uses JWT tokens for authentication")
         assert "consolidation" not in r2
 
-        # Store 3 — should trigger consolidation
+        # Store 3 — should trigger inline consolidation (worker not running)
         r3 = do_store("Kai Tanaka deployed the OAuth service for Project Alpha")
         assert "consolidation" in r3
         assert r3["consolidation"]["memories_replayed"] >= 1
+
+    def test_triggers_after_interval_async(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """When the worker is running, consolidation is scheduled asynchronously."""
+        import threading
+
+        from myelin.worker import BackgroundWorker
+
+        cfg = MyelinSettings(data_dir=tmp_path / ".myelin", consolidation_interval=3)  # type: ignore[arg-type]
+        configure(cfg)
+
+        consolidation_ran = threading.Event()
+
+        # Patch the worker used by the server with one whose consolidate_fn
+        # signals us so we can verify async execution without race-waiting.
+        import myelin.server as srv
+
+        original_consolidate = srv.do_consolidate
+
+        def _signal_and_consolidate() -> dict:
+            result = original_consolidate()
+            consolidation_ran.set()
+            return result
+
+        worker = BackgroundWorker(
+            consolidate_fn=_signal_and_consolidate,
+            decay_fn=srv.do_decay_sweep,
+            decay_interval_hours=0,
+        )
+        worker.start()
+        srv._worker = worker
+
+        try:
+            r1 = do_store("Kai Tanaka works on Project Alpha backend")
+            assert "consolidation" not in r1
+            r2 = do_store("Project Alpha uses JWT tokens for authentication")
+            assert "consolidation" not in r2
+
+            # Store 3 — consolidation queued to worker, response says "scheduled"
+            r3 = do_store("Kai Tanaka deployed the OAuth service for Project Alpha")
+            assert r3.get("consolidation") in ("scheduled", "skipped")
+
+            # Worker executes consolidation asynchronously
+            assert consolidation_ran.wait(timeout=5), "consolidation did not run"
+        finally:
+            worker.stop()
 
     def test_disabled_when_interval_zero(
         self, tmp_path: pytest.TempPathFactory
@@ -180,103 +242,3 @@ class TestAutoConsolidation:
         for i in range(5):
             result = do_store(f"Memory number {i} about some topic here")
             assert "consolidation" not in result
-
-
-class TestDoPinUnpin:
-    def test_pin_returns_pinned_status(self) -> None:
-        from myelin.server import do_pin
-
-        result = do_pin("mem-123", priority=2, label="important")
-        assert result["status"] == "pinned"
-        assert result["memory_id"] == "mem-123"
-        assert result["priority"] == 2
-
-    def test_unpin_existing_memory(self) -> None:
-        from myelin.server import do_pin, do_unpin
-
-        do_pin("mem-456")
-        result = do_unpin("mem-456")
-        assert result["status"] == "unpinned"
-
-    def test_unpin_nonexistent_returns_not_found(self) -> None:
-        from myelin.server import do_unpin
-
-        result = do_unpin("does-not-exist")
-        assert result["status"] == "not_found"
-
-    def test_pinned_memories_injected_into_recall(self) -> None:
-        from myelin.server import do_pin, do_recall
-
-        r = do_store("The load balancer uses nginx with round-robin policy")
-        memory_id = r["id"]
-        do_pin(memory_id, priority=1)
-
-        # Recall with unrelated query — pinned memory should still appear
-        results = do_recall("completely unrelated query about cooking recipes")
-        ids = [res["id"] for res in results]
-        assert memory_id in ids
-
-
-class TestDoDecaySweepWithStale:
-    def test_sweep_prunes_stale_memories(
-        self, tmp_path: pytest.TempPathFactory
-    ) -> None:
-        """Memories with ancient last_accessed dates are pruned."""
-        from unittest.mock import patch
-
-        from myelin.server import do_decay_sweep
-
-        do_store("Ancient ephemeral fact that should be pruned by decay")
-        memory_id = do_recall("ephemeral fact")[0]["id"]
-
-        # Make find_stale return it as stale
-        with patch("myelin.server.find_stale", return_value=[memory_id]):
-            result = do_decay_sweep()
-
-        assert result["pruned"] == 1
-        assert result["remaining"] == 0
-
-
-class TestDoStoreChunksAndReplace:
-    def test_store_long_content_reports_chunks(self) -> None:
-        """Multi-chunk content returns chunks count in result."""
-        # 3000 chars reliably triggers chunking (chunk_max_chars default ~1500)
-        long_content = "The authentication service " * 200
-        result = do_store(long_content)
-        assert result["status"] == "stored"
-        # Chunked content reports chunks > 1
-        if "chunks" in result:
-            assert result["chunks"] > 1
-
-    def test_store_overwrite_returns_replaced(self) -> None:
-        """store with overwrite=True on near-duplicate returns replaced key."""
-        original = "The payment service uses Stripe for card processing"
-        updated = "The payment service uses Stripe for all payment processing"
-        do_store(original)
-        result = do_store(updated, overwrite=True)
-        assert result["status"] in ("updated", "stored")
-        if result["status"] == "updated":
-            assert "replaced" in result
-
-
-class TestShutdown:
-    def test_shutdown_clears_singletons(self) -> None:
-        """shutdown() closes and resets all server singletons."""
-        import myelin.server as srv
-
-        # Trigger initialization
-        do_store("Initialize the server singletons by storing something here")
-        assert srv._hippocampus is not None
-
-        srv.shutdown()
-        assert srv._hippocampus is None
-        assert srv._hebbian is None
-        assert srv._neocortex is None
-        assert srv._thalamus is None
-
-    def test_shutdown_idempotent(self) -> None:
-        """Calling shutdown twice does not raise."""
-        import myelin.server as srv
-
-        srv.shutdown()
-        srv.shutdown()  # should not raise

@@ -28,14 +28,17 @@ from .store import (
     ThalamicBuffer,
     replay,
 )
+from .worker import BackgroundWorker
 
 
 @asynccontextmanager
 async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
-    """Start model warm-up in the background so initialize responds immediately."""
+    """Start model warm-up and background worker; clean up on shutdown."""
     loop = asyncio.get_event_loop()
     loop.run_in_executor(None, warm_up)
+    _get_worker().start()
     yield
+    _get_worker().stop()
 
 
 mcp = FastMCP("myelin", lifespan=_lifespan)
@@ -48,6 +51,7 @@ _hippocampus: Hippocampus | None = None
 _hebbian: HebbianTracker | None = None
 _neocortex: SemanticNetwork | None = None
 _thalamus: ThalamicBuffer | None = None
+_worker: BackgroundWorker | None = None
 _cfg: MyelinSettings = settings
 _store_count: int = 0
 
@@ -55,18 +59,21 @@ _store_count: int = 0
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
     global _cfg, _hippocampus, _hebbian, _neocortex
-    global _thalamus, _store_count
+    global _thalamus, _worker, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
         _neocortex.close()
     if _thalamus is not None:
         _thalamus.close()
+    if _worker is not None:
+        _worker.stop()
     _cfg = cfg
     _hippocampus = None
     _hebbian = None
     _neocortex = None
     _thalamus = None
+    _worker = None
     _store_count = 0
 
 
@@ -107,6 +114,18 @@ def _get_thalamus() -> ThalamicBuffer:
     return _thalamus
 
 
+def _get_worker() -> BackgroundWorker:
+    global _worker
+    if _worker is None:
+        _worker = BackgroundWorker(
+            consolidate_fn=do_consolidate,
+            decay_fn=do_decay_sweep,
+            decay_interval_hours=_cfg.worker_decay_interval_hours,
+            queue_maxsize=_cfg.worker_queue_maxsize,
+        )
+    return _worker
+
+
 def warm_up() -> None:
     """Pre-warm models by running dummy inference (avoids cold-start lag)."""
     _get_hippocampus().warm_up()
@@ -114,8 +133,11 @@ def warm_up() -> None:
 
 def shutdown() -> None:
     """Close all initialized stores gracefully."""
-    global _hippocampus, _hebbian, _neocortex, _thalamus
+    global _hippocampus, _hebbian, _neocortex, _thalamus, _worker
     logger.info("shutting down")
+    if _worker is not None:
+        _worker.stop()
+        _worker = None
     if _hippocampus is not None:
         if _hippocampus._reranker is not None:
             _hippocampus._reranker.close()
@@ -219,13 +241,20 @@ def do_store(
     if chunks_stored > 1:
         result["chunks"] = chunks_stored
 
-    # Auto-consolidation: replay into neocortex every N stores
+    # Auto-consolidation: submit to background worker every N stores.
+    # Falls back to inline if the worker is not running (e.g. during tests
+    # that call do_store directly without starting the server lifespan).
     _store_count += 1
     if _cfg.consolidation_interval > 0 and (
         _store_count % _cfg.consolidation_interval == 0
     ):
-        consolidation_result = do_consolidate()
-        result["consolidation"] = consolidation_result
+        worker = _get_worker()
+        if worker.is_running:
+            queued = worker.submit_consolidate()
+            result["consolidation"] = "scheduled" if queued else "skipped"
+        else:
+            consolidation_result = do_consolidate()
+            result["consolidation"] = consolidation_result
 
     return result
 
@@ -338,8 +367,11 @@ def do_status() -> dict[str, Any]:
     """Memory system status."""
     hc = _get_hippocampus()
     net = _get_neocortex()
+    integrity = hc.check_integrity()
     return {
-        "memory_count": hc.count(),
+        "memory_count": integrity["memory_count"],
+        "summary_count": integrity["summary_count"],
+        "consistent": integrity["consistent"],
         "pinned_count": _get_thalamus().pinned_count(),
         "entity_count": net.entity_count(),
         "relationship_count": net.relationship_count(),
@@ -347,6 +379,7 @@ def do_status() -> dict[str, Any]:
         "embedding_model": _cfg.embedding_model,
         "max_idle_days": _cfg.max_idle_days,
         "min_access_count": _cfg.min_access_count,
+        "worker": _get_worker().status(),
     }
 
 
@@ -558,7 +591,6 @@ def main() -> None:
     """Run the MCP server (stdio transport)."""
     setup_logging(level=getattr(logging, _cfg.log_level))
     _cfg.ensure_dirs()
-
     logger.info(
         "starting myelin server",
         extra={

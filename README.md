@@ -420,7 +420,7 @@ STORE (fast, zero-LLM)              RECALL (multi-probe)
 |-----------|--------|-------------|
 | **Entity Extraction** | `store/consolidation.py` | Regex-based extraction of names, tech identifiers, terms |
 | **Semantic Network** | `store/neocortex.py` | Entity graph with weighted co-occurrence edges |
-| **Auto-trigger** | `server.py` | Fires every `consolidation_interval` stores |
+| **Auto-trigger** | `server.py` | Queues to background worker every `consolidation_interval` stores |
 
 ### Detailed Walkthrough
 
@@ -735,8 +735,22 @@ All parameters use environment variables with a `MYELIN_` prefix. Defaults work 
 | `hebbian_delta` | `0.1` | Co-access weight increment |
 | `hebbian_scale` | `0.1` | Logarithmic boost scale |
 | `thalamus_recency_limit` | `20` | Recency buffer size |
-| `consolidation_interval` | `50` | Auto-consolidate every N stores |
+| `consolidation_interval` | `50` | Queue a background consolidation every N stores (0 = disabled) |
 | `log_level` | `INFO` | Logging verbosity (structured JSON to stderr) |
+
+### Background Worker Parameters
+
+| Parameter | Default | What It Controls |
+|-----------|---------|-----------------|
+| `worker_decay_interval_hours` | `24.0` | How often the background worker runs a decay sweep (0 = disabled) |
+| `worker_queue_maxsize` | `10` | Max pending consolidation tasks in the queue; extras are dropped safely |
+
+The background worker runs in a daemon thread alongside the MCP server. It handles two types of work:
+
+- **Consolidation** — when `do_store` reaches every `consolidation_interval` stores, it queues a task instead of blocking the store call. The response includes `"consolidation": "scheduled"` so your agent knows work is in flight.
+- **Periodic decay** — every `worker_decay_interval_hours`, the worker automatically prunes stale memories. No need to remember to run `myelin decay` manually.
+
+Worker status is visible in `myelin status` output under the `"worker"` key: last consolidation time, last decay time, and current queue depth.
 
 ---
 
