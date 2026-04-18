@@ -59,7 +59,7 @@ _store_count: int = 0
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
     global _cfg, _hippocampus, _hebbian, _neocortex
-    global _thalamus, _decay_timer, _store_count
+    global _thalamus, _decay_timer, _worker, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
@@ -193,10 +193,16 @@ def do_store(
     source: str = "",
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Store a memory. Returns dict with status."""
+    """Store a memory.
+
+    Always returns ``status``, ``id`` (``None`` when rejected), and
+    ``reason`` (``None`` on success) so callers have a stable shape to
+    pattern-match against without key-existence checks.
+    """
     if len(content) > _MAX_CONTENT_CHARS:
         return {
             "status": "rejected",
+            "id": None,
             "reason": f"content exceeds {_MAX_CONTENT_CHARS} char limit",
         }
     global _store_count
@@ -216,7 +222,11 @@ def do_store(
             "store rejected: too short or near-duplicate",
             extra={"project": project, "scope": scope},
         )
-        return {"status": "rejected", "reason": "too short or near-duplicate"}
+        return {
+            "status": "rejected",
+            "id": None,
+            "reason": "too short or near-duplicate",
+        }
     chunks_stored = hc.count() - count_before
     status = "updated" if memory.replaced_id else "stored"
     logger.info(
@@ -233,7 +243,7 @@ def do_store(
             "replaced_id": memory.replaced_id,
         },
     )
-    result: dict[str, Any] = {"id": memory.id, "status": status}
+    result: dict[str, Any] = {"id": memory.id, "status": status, "reason": None}
     if memory.replaced_id:
         result["replaced"] = memory.replaced_id
     if chunks_stored > 1:

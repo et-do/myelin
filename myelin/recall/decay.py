@@ -38,9 +38,18 @@ def find_stale(
     stale_ids: list[str] = []
 
     for entry in metadata_list:
-        last = datetime.fromisoformat(entry["last_accessed"])
+        raw_last = entry.get("last_accessed")
+        if not raw_last:
+            continue  # corrupted row — skip rather than crash
+        try:
+            last = datetime.fromisoformat(raw_last)
+        except (ValueError, TypeError):
+            continue
         idle_days = (now - last).days
-        access_count = int(entry.get("access_count", 0))
+        try:
+            access_count = int(entry.get("access_count", 0))
+        except (ValueError, TypeError):
+            access_count = 0
 
         # Low-access memories decay at the normal threshold
         if idle_days > max_days and access_count < min_count:
@@ -66,6 +75,8 @@ def find_lru(
     if n <= 0:
         return []
     exclude = exclude_ids or set()
-    candidates = [m for m in metadata_list if m["id"] not in exclude]
+    candidates = [
+        m for m in metadata_list if m["id"] not in exclude and m.get("last_accessed")
+    ]
     candidates.sort(key=lambda m: m["last_accessed"])
     return [m["id"] for m in candidates[:n]]
