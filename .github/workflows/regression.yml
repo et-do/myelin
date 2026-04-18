@@ -45,10 +45,21 @@ jobs:
         if: steps.lme-cache.outputs.cache-hit != 'true'
         run: bash benchmarks/longmemeval/download_data.sh
 
+      # Cache LoCoMo data (downloaded from snap-research/locomo on GitHub).
+      - name: Cache LoCoMo benchmark data
+        id: locomo-cache
+        uses: actions/cache@v4
+        with:
+          path: benchmarks/locomo/data
+          key: locomo-data-${{ hashFiles('benchmarks/locomo/download_data.sh') }}
+
+      - name: Download LoCoMo data
+        if: steps.locomo-cache.outputs.cache-hit != 'true'
+        run: bash benchmarks/locomo/download_data.sh
+
       # Rolling baseline cache: key is unique per commit so it never hits on a
       # fresh push, but restore-keys fall back to the most recent prior entry.
-      # This gives us a stable rolling baseline without a separate storage
-      # solution.  LoCoMo data lives in the repo; no extra download needed.
+      # This gives us a stable rolling baseline without a separate storage solution.
       - name: Restore regression baseline
         id: baseline
         uses: actions/cache/restore@v4
