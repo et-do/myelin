@@ -6,7 +6,6 @@ import pytest
 
 from myelin.config import MyelinSettings
 from myelin.server import (
-    _signal_handler,
     configure,
     do_consolidate,
     do_decay_sweep,
@@ -14,7 +13,6 @@ from myelin.server import (
     do_recall,
     do_status,
     do_store,
-    warm_up,
 )
 
 
@@ -28,16 +26,28 @@ class TestDoStore:
     def test_stores_valid_content(self) -> None:
         result = do_store("The auth service uses JWT tokens")
         assert result["status"] == "stored"
-        assert "id" in result
+        assert result["id"] is not None
+        assert result["reason"] is None
 
     def test_rejects_short_content(self) -> None:
         result = do_store("hi")
         assert result["status"] == "rejected"
+        assert result["id"] is None
+        assert result["reason"] is not None
 
     def test_rejects_oversized_content(self) -> None:
         result = do_store("x" * 500_001)
         assert result["status"] == "rejected"
+        assert result["id"] is None
         assert "limit" in result["reason"]
+
+    def test_response_always_has_stable_keys(self) -> None:
+        """Every store response has id, status, and reason regardless of outcome."""
+        for content in ["hi", "The auth service uses JWT tokens for sessions"]:
+            r = do_store(content)
+            assert "id" in r
+            assert "status" in r
+            assert "reason" in r
 
     def test_stores_with_metadata(self) -> None:
         result = do_store(
@@ -49,6 +59,89 @@ class TestDoStore:
             source="copilot",
         )
         assert result["status"] == "stored"
+
+    def test_new_memory_access_count_is_one(self) -> None:
+        """Stored memories start with access_count=1 (the store itself counts)."""
+        from myelin.models import Memory
+
+        m = Memory(content="test")
+        assert m.access_count == 1
+
+    def test_relations_writes_edges_to_neocortex(self) -> None:
+        """Explicit relations are stored as neocortex edges immediately."""
+        from myelin.server import _get_neocortex
+
+        result = do_store(
+            "AuthService depends on JWTHelper for token validation",
+            relations='[["AuthService", "depends_on", "JWTHelper"]]',
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") == 1
+        net = _get_neocortex()
+        rels = net.get_relationships("AuthService", predicate="depends_on")
+        objects = [r["object"] for r in rels]
+        assert "jwthelper" in objects
+
+    def test_relations_multiple_triples(self) -> None:
+        """Multiple triples are all written."""
+        result = do_store(
+            "The API gateway routes to AuthService and PaymentService",
+            relations=(
+                '[["APIGateway","routes_to","AuthService"],'
+                '["APIGateway","routes_to","PaymentService"]]'
+            ),
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") == 2
+
+    def test_relations_invalid_json_is_ignored(self) -> None:
+        """Malformed JSON in relations never blocks the store."""
+        result = do_store(
+            "The cache layer wraps Redis for session storage",
+            relations="not valid json at all",
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") is None
+
+    def test_relations_not_a_list_is_ignored(self) -> None:
+        result = do_store(
+            "The cache layer uses Redis for session data persistence",
+            relations='{"subject": "A", "predicate": "rel", "object": "B"}',
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") is None
+
+    def test_relations_malformed_triple_skipped(self) -> None:
+        """Triples with wrong length or non-string values are silently skipped."""
+        result = do_store(
+            "Scheduler dispatches tasks using Celery for async processing",
+            relations='[["OnlyTwo", "items"], ["ValidA", "uses", "ValidB"], [1, 2, 3]]',
+        )
+        assert result["status"] == "stored"
+        # Only the valid triple ("ValidA","uses","ValidB") should be counted
+        assert result.get("relationships") == 1
+
+    def test_relations_empty_string_field_skipped(self) -> None:
+        """Triples containing empty strings are silently skipped."""
+        result = do_store(
+            "Worker processes jobs from the task queue using async handlers",
+            relations='[["", "uses", "Redis"], ["Worker", "uses", ""]]',
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") is None
+
+    def test_relations_on_rejected_store_not_written(self) -> None:
+        """Relations must not be written if the store itself is rejected."""
+        from myelin.server import _get_neocortex
+
+        do_store("hi", relations='[["A", "rel", "B"]]')
+        net = _get_neocortex()
+        rels = net.get_relationships("A")
+        assert rels == []
+
+    def test_store_without_relations_has_no_relationships_key(self) -> None:
+        result = do_store("The search service indexes documents using Elasticsearch")
+        assert "relationships" not in result
 
 
 class TestDoRecall:
@@ -114,11 +207,6 @@ class TestDoStatus:
         assert "data_dir" in result
         assert "embedding_model" in result
         assert result["memory_count"] == 0
-
-    def test_decay_timer_status_present(self) -> None:
-        result = do_status()
-        assert "decay_timer_running" in result
-        assert result["decay_timer_running"] is False  # timer not started in tests
 
 
 class TestDoConsolidate:

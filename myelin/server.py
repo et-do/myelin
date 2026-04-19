@@ -12,12 +12,14 @@ import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
 
 from .config import MyelinSettings, settings
+from .ingest import IngestResult, ingest_directory, ingest_file
 from .log import request_id, setup_logging
 from .models import MemoryMetadata, RecallResult
 from .recall import HebbianTracker, find_lru, find_stale
@@ -59,7 +61,7 @@ _store_count: int = 0
 def configure(cfg: MyelinSettings) -> None:
     """Override settings for the server (used by tests and benchmarks)."""
     global _cfg, _hippocampus, _hebbian, _neocortex
-    global _thalamus, _decay_timer, _store_count
+    global _thalamus, _decay_timer, _worker, _store_count
     if _hebbian is not None:
         _hebbian.close()
     if _neocortex is not None:
@@ -183,6 +185,39 @@ _MAX_CONTENT_CHARS = 500_000  # ~125K tokens
 _MAX_QUERY_CHARS = 10_000  # ~2.5K tokens
 
 
+def _inject_relations(relations: str) -> int:
+    """Parse a JSON-encoded list of [subject, predicate, object] triples and
+    write each as a relationship edge in the semantic network.
+
+    Silently skips malformed input so a bad ``relations`` value never blocks
+    an otherwise-valid store call.  Returns the number of edges written.
+    """
+    try:
+        raw = json.loads(relations)
+    except (json.JSONDecodeError, ValueError):
+        logger.debug("relations: invalid JSON, skipping")
+        return 0
+    if not isinstance(raw, list):
+        return 0
+    net = _get_neocortex()
+    count = 0
+    for item in raw:
+        if (
+            isinstance(item, (list, tuple))
+            and len(item) == 3
+            and all(isinstance(v, str) and v.strip() for v in item)
+        ):
+            net.add_relationship(
+                subject=item[0].strip(),
+                object_=item[2].strip(),
+                predicate=item[1].strip(),
+            )
+            count += 1
+        else:
+            logger.debug("relations: skipping malformed triple %r", item)
+    return count
+
+
 def do_store(
     content: str,
     project: str = "",
@@ -193,11 +228,18 @@ def do_store(
     source: str = "",
     overwrite: bool = False,
     agent_id: str = "",
+    relations: str = "",
 ) -> dict[str, Any]:
-    """Store a memory. Returns dict with status."""
+    """Store a memory.
+
+    Always returns ``status``, ``id`` (``None`` when rejected), and
+    ``reason`` (``None`` on success) so callers have a stable shape to
+    pattern-match against without key-existence checks.
+    """
     if len(content) > _MAX_CONTENT_CHARS:
         return {
             "status": "rejected",
+            "id": None,
             "reason": f"content exceeds {_MAX_CONTENT_CHARS} char limit",
         }
     global _store_count
@@ -218,7 +260,11 @@ def do_store(
             "store rejected: too short or near-duplicate",
             extra={"project": project, "scope": scope},
         )
-        return {"status": "rejected", "reason": "too short or near-duplicate"}
+        return {
+            "status": "rejected",
+            "id": None,
+            "reason": "too short or near-duplicate",
+        }
     chunks_stored = hc.count() - count_before
     status = "updated" if memory.replaced_id else "stored"
     logger.info(
@@ -235,11 +281,18 @@ def do_store(
             "replaced_id": memory.replaced_id,
         },
     )
-    result: dict[str, Any] = {"id": memory.id, "status": status}
+    result: dict[str, Any] = {"id": memory.id, "status": status, "reason": None}
     if memory.replaced_id:
         result["replaced"] = memory.replaced_id
     if chunks_stored > 1:
         result["chunks"] = chunks_stored
+
+    # Explicit relationship injection — parse before auto-consolidation so
+    # edges are immediately queryable without waiting for the next replay.
+    if relations:
+        rel_count = _inject_relations(relations)
+        if rel_count:
+            result["relationships"] = rel_count
 
     # Storage cap — evict LRU memories if we're over the limit.
     # Pinned memories (thalamic relay) are never evicted.
@@ -409,6 +462,51 @@ def do_consolidate() -> dict[str, Any]:
         "memories_replayed": result.memories_replayed,
         "entities_found": result.entities_found,
         "relationships_created": result.relationships_created,
+    }
+
+
+def do_ingest(
+    path: str,
+    *,
+    project: str = "",
+    scope: str = "",
+    source: str = "ingest",
+    recursive: bool = True,
+) -> dict[str, Any]:
+    """Bulk-load content from a file or directory into memory.
+
+    Supports ``.txt``, ``.md`` (with optional YAML frontmatter), and
+    ``.json`` (array of objects with a ``"content"`` key, as produced by
+    ``myelin export``).  When *path* is a directory every supported file
+    under it is ingested.
+
+    Frontmatter metadata in Markdown/text files overrides the *project*,
+    *scope*, *language*, *memory_type*, *tags*, and *source* defaults.
+
+    Returns a summary dict with ``stored``, ``skipped``, and ``errors``.
+    """
+    p = Path(path)
+    if p.is_dir():
+        result: IngestResult = ingest_directory(
+            p,
+            store_fn=do_store,
+            default_project=project,
+            default_scope=scope,
+            default_source=source,
+            recursive=recursive,
+        )
+    else:
+        result = ingest_file(
+            p,
+            store_fn=do_store,
+            default_project=project,
+            default_scope=scope,
+            default_source=source,
+        )
+    return {
+        "stored": result.stored,
+        "skipped": result.skipped,
+        "errors": result.errors,
     }
 
 
@@ -590,6 +688,7 @@ def store(
     source: str = "",
     overwrite: bool = False,
     agent_id: str = "",
+    relations: str = "",
 ) -> str:
     """Store a memory with optional context metadata.
 
@@ -608,6 +707,10 @@ def store(
         agent_id: Namespace identifier for the storing agent or bot.
             Memories tagged with an agent_id are only returned when the
             same agent_id is supplied at recall time.
+        relations: JSON-encoded list of [subject, predicate, object] triples
+            to assert as relationship edges immediately, e.g.
+            ``'[["AuthService","depends_on","JWTHelper"]]'``.
+            Malformed input is silently ignored so it never blocks the store.
 
     Returns:
         JSON with memory ID on success, or rejection reason.
@@ -624,6 +727,7 @@ def store(
                 source,
                 overwrite,
                 agent_id,
+                relations,
             )
         )
 
@@ -756,6 +860,43 @@ def consolidate() -> str:
     """
     with _track("consolidate"):
         return json.dumps(do_consolidate())
+
+
+@mcp.tool()
+def ingest(
+    path: str,
+    project: str = "",
+    scope: str = "",
+    source: str = "ingest",
+    recursive: bool = True,
+) -> str:
+    """Bulk-load memories from a file or directory.
+
+    Supported formats:
+
+    - ``.txt`` / ``.md``: file body stored as one memory.  Optional YAML
+      frontmatter (between ``---`` delimiters) sets project, scope, language,
+      memory_type, tags, and source for that file.
+    - ``.json``: array of objects with a ``"content"`` key (same shape as
+      ``myelin export`` output).
+    - **directory**: recurse and ingest every supported file found.
+
+    Args:
+        path: Absolute or relative path to a file or directory.
+        project: Default project tag (overridden by per-file frontmatter).
+        scope: Default scope tag (overridden by per-file frontmatter).
+        source: Source label for all ingested memories.
+        recursive: Descend into subdirectories (default: true).
+
+    Returns:
+        JSON summary with stored, skipped, and errors counts.
+    """
+    with _track("ingest"):
+        return json.dumps(
+            do_ingest(
+                path, project=project, scope=scope, source=source, recursive=recursive
+            )
+        )
 
 
 @mcp.tool()

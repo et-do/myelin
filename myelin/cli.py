@@ -176,6 +176,102 @@ def cmd_export(args: argparse.Namespace) -> None:
         print(f"Exported {len(export_data)} memories to {output}")
 
 
+def cmd_export_md(args: argparse.Namespace) -> None:
+    """Export memories as individual Markdown files with YAML frontmatter."""
+    import os
+
+    from .store import Hippocampus
+
+    hc = Hippocampus()
+    memories = hc.get_all_content()
+    metadata = hc.get_all_metadata()
+    meta_by_id = {m["id"]: m for m in metadata}
+
+    out_dir = args.output_dir
+    os.makedirs(out_dir, exist_ok=True)
+
+    meta_fields = ("project", "scope", "language", "memory_type", "source", "tags")
+    count = 0
+    for mem in memories:
+        mid = mem["id"]
+        meta = meta_by_id.get(mid, {})
+        content = mem["content"]
+
+        # Build YAML frontmatter — only non-empty fields
+        fm_lines = [f"id: {mid}"]
+        for key in meta_fields:
+            val = meta.get(key)
+            if val:
+                fm_lines.append(f"{key}: {val}")
+        if meta.get("created_at"):
+            fm_lines.append(f"created_at: {meta['created_at']}")
+
+        frontmatter = "---\n" + "\n".join(fm_lines) + "\n---\n\n"
+        filename = os.path.join(out_dir, f"{mid}.md")
+        with open(filename, "w", encoding="utf-8") as f:
+            f.write(frontmatter + content)
+        count += 1
+
+    print(f"Exported {count} memories to {out_dir}/")
+
+
+def cmd_import_md(args: argparse.Namespace) -> None:
+    """Import memories from a directory of Markdown files with YAML frontmatter."""
+    import os
+    import re
+
+    from .server import configure, do_store
+
+    configure(settings)
+
+    fm_re = re.compile(r"^---\r?\n(.*?)\r?\n---\r?\n?", re.DOTALL)
+    kv_re = re.compile(r"^(\w+)\s*:\s*(.+)$", re.MULTILINE)
+    meta_fields = {"project", "scope", "language", "memory_type", "source", "tags"}
+
+    md_dir = args.input_dir
+    files = sorted(f for f in os.listdir(md_dir) if f.endswith(".md"))
+    if not files:
+        print(f"No .md files found in {md_dir}")
+        return
+
+    stored = skipped = 0
+    for fname in files:
+        path = os.path.join(md_dir, fname)
+        with open(path, encoding="utf-8", errors="replace") as f:
+            text = f.read()
+
+        meta: dict[str, str] = {}
+        body = text
+        m = fm_re.match(text)
+        if m:
+            for kv in kv_re.finditer(m.group(1)):
+                key = kv.group(1).strip().lower()
+                val = kv.group(2).strip()
+                if key in meta_fields:
+                    meta[key] = val
+            body = text[m.end() :].strip()
+
+        if not body:
+            skipped += 1
+            continue
+
+        result = do_store(
+            body,
+            project=meta.get("project", ""),
+            scope=meta.get("scope", ""),
+            memory_type=meta.get("memory_type", ""),
+            language=meta.get("language", ""),
+            tags=meta.get("tags", ""),
+            source=meta.get("source", args.source),
+        )
+        if result.get("status") in {"stored", "updated"}:
+            stored += 1
+        else:
+            skipped += 1
+
+    print(f"Imported {stored} memories ({skipped} skipped) from {md_dir}/")
+
+
 def cmd_import(args: argparse.Namespace) -> None:
     from .server import configure, do_store
 
@@ -208,6 +304,26 @@ def cmd_import(args: argparse.Namespace) -> None:
     print(f"Imported {stored} memories ({skipped} skipped).")
 
 
+def cmd_ingest(args: argparse.Namespace) -> None:
+    from .server import configure, do_ingest
+
+    configure(settings)
+    result = do_ingest(
+        args.path,
+        project=args.project or "",
+        scope=args.scope or "",
+        source=args.source or "ingest",
+        recursive=not args.no_recursive,
+    )
+    print(
+        f"Ingested: {result['stored']} stored, "
+        f"{result['skipped']} skipped"
+        + (f", {len(result['errors'])} errors" if result["errors"] else "")
+    )
+    for err in result["errors"]:
+        print(f"  ERROR: {err}", file=sys.stderr)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="myelin", description="Neuromorphic AI memory"
@@ -225,6 +341,36 @@ def main() -> None:
 
     p_import = sub.add_parser("import", help="Import memories from JSON")
     p_import.add_argument("input", help="JSON file to import")
+
+    p_export_md = sub.add_parser(
+        "export-md", help="Export memories as Markdown files with YAML frontmatter"
+    )
+    p_export_md.add_argument("output_dir", help="Directory to write .md files into")
+
+    p_import_md = sub.add_parser(
+        "import-md", help="Import memories from a directory of Markdown files"
+    )
+    p_import_md.add_argument("input_dir", help="Directory containing .md files")
+    p_import_md.add_argument(
+        "--source",
+        default="import-md",
+        help="Source label for imported memories (default: import-md)",
+    )
+
+    p_ingest = sub.add_parser(
+        "ingest", help="Bulk-load memories from a file or directory"
+    )
+    p_ingest.add_argument("path", help="File or directory to ingest")
+    p_ingest.add_argument("--project", default="", help="Default project tag")
+    p_ingest.add_argument("--scope", default="", help="Default scope tag")
+    p_ingest.add_argument(
+        "--source", default="ingest", help="Source label (default: ingest)"
+    )
+    p_ingest.add_argument(
+        "--no-recursive",
+        action="store_true",
+        help="Do not recurse into subdirectories",
+    )
 
     p_debug = sub.add_parser(
         "debug-recall",
@@ -265,6 +411,9 @@ def main() -> None:
         "consolidate": cmd_consolidate,
         "export": cmd_export,
         "import": cmd_import,
+        "export-md": cmd_export_md,
+        "import-md": cmd_import_md,
+        "ingest": cmd_ingest,
         "debug-recall": cmd_debug_recall,
     }
     commands[args.command](args)
