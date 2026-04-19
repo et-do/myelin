@@ -9,7 +9,11 @@ permissions:
   pull-requests: write
 
 jobs:
+  # ── Release PR management ─────────────────────────────────────────────────
+  # Accumulates conventional commits and maintains an open Release PR.
+  # Sets release_created=true when a Release PR is merged.
   release-please:
+    name: Release Please
     runs-on: ubuntu-latest
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
@@ -19,25 +23,32 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  # Full regression suite runs only when a release is actually being created.
-  # Blocks publish so a quality regression can't ship to PyPI.
+  # ── Full regression gate ──────────────────────────────────────────────────
+  # Runs the complete benchmark suite (~60 min) only when a release is being
+  # created. Publish is blocked until this passes.
   regression:
+    name: Full regression gate
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     uses: ./.github/workflows/regression.yml
     with:
       full: true
 
+  # ── Publish to PyPI ───────────────────────────────────────────────────────
+  # Requires regression to have passed — a quality regression cannot ship.
+  # Uses OIDC trusted publishing (no API token required).
   publish:
+    name: Publish to PyPI
     needs: [release-please, regression]
-    if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
-      id-token: write  # Required for PyPI OIDC trusted publishing
+      id-token: write  # Required for OIDC trusted publishing
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v5
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
       - name: Build distribution
         run: uv build
       - name: Publish to PyPI
