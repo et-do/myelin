@@ -6,6 +6,7 @@ import pytest
 
 from myelin.config import MyelinSettings
 from myelin.server import (
+    _signal_handler,
     configure,
     do_consolidate,
     do_decay_sweep,
@@ -13,6 +14,7 @@ from myelin.server import (
     do_recall,
     do_status,
     do_store,
+    warm_up,
 )
 
 
