@@ -123,6 +123,7 @@ jobs:
           restore-keys: hf-models-
       - name: Run latency benchmarks
         run: |
+          mkdir -p benchmarks/perf
           uv run pytest tests/benchmarks/test_latency.py \
             -p no:xdist \
             --override-ini="addopts=" \
