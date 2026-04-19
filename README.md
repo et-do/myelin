@@ -41,6 +41,7 @@
 - [Setup Guides](#setup-guides)
   - [Personal (Cross-Project)](#personal-cross-project)
   - [Per-Repository](#per-repository)
+  - [Multi-Agent (Shared Instance, Isolated Namespaces)](#multi-agent-shared-instance-isolated-namespaces)
   - [Team / Cloud](#team--cloud)
 - [Teaching Your Agent](#teaching-your-agent)
 - [Results](#results)
@@ -196,6 +197,74 @@ Create a `.vscode/mcp.json` in the repo:
 
 **3. Add agent instructions** (see [Teaching Your Agent](#teaching-your-agent) below).
 
+### Multi-Agent (Shared Instance, Isolated Namespaces)
+
+**Best for:** Multiple bots or agents that share one Myelin instance but must
+not see each other's memories (e.g., a Copilot agent and a CI bot running
+against the same data directory).
+
+Pass `agent_id` on every `store` and `recall` call:
+
+```python
+# Copilot stores its own context
+store(content="Decided to use pgvector for embeddings", agent_id="copilot")
+
+# Copilot recalls only its own memories
+recall(query="database embedding strategy", agent_id="copilot")
+
+# CI bot has its own isolated namespace
+store(content="Build failed: missing env var DATABASE_URL", agent_id="ci-bot")
+recall(query="build failures", agent_id="ci-bot")
+```
+
+- Memories stored **with** an `agent_id` are invisible to any other `agent_id`.
+- Memories stored **without** an `agent_id` live in the global namespace and
+  are returned by any recall that omits `agent_id`.
+- No configuration needed — `agent_id` is just a metadata field. Backward
+  compatible: existing memories without it remain fully accessible.
+
+The `debug-recall` CLI also accepts `--agent-id` to scope diagnostic queries:
+
+```bash
+myelin debug-recall "embedding strategy" --agent-id copilot
+```
+
+---
+
+### Multi-Agent (Shared Instance, Isolated Namespaces)
+
+**Best for:** Multiple bots or agents that share one Myelin instance but must
+not see each other's memories (e.g., a Copilot agent and a CI bot running
+against the same data directory).
+
+Pass `agent_id` on every `store` and `recall` call:
+
+```python
+# Copilot stores its own context
+store(content="Decided to use pgvector for embeddings", agent_id="copilot")
+
+# Copilot recalls only its own memories
+recall(query="database embedding strategy", agent_id="copilot")
+
+# CI bot has its own isolated namespace
+store(content="Build failed: missing env var DATABASE_URL", agent_id="ci-bot")
+recall(query="build failures", agent_id="ci-bot")
+```
+
+- Memories stored **with** an `agent_id` are invisible to any other `agent_id`.
+- Memories stored **without** an `agent_id` live in the global namespace and
+  are returned by any recall that omits `agent_id`.
+- No configuration needed — `agent_id` is just a metadata field. Backward
+  compatible: existing memories without it remain fully accessible.
+
+The `debug-recall` CLI also accepts `--agent-id` to scope diagnostic queries:
+
+```bash
+myelin debug-recall "embedding strategy" --agent-id copilot
+```
+
+---
+
 ### Team / Cloud
 
 **Best for:** Organizations that want shared memory across team members and CI environments.
@@ -263,6 +332,10 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 - Use `tags` for cross-cutting concerns (e.g., tags="performance,optimization").
 - Use `memory_type` when it's clear: "semantic" for decisions/facts,
   "procedural" for how-to, "episodic" for events, "prospective" for plans.
+- Use `agent_id` when multiple bots or agents share one Myelin instance and
+  need isolated namespaces (e.g., agent_id="copilot", agent_id="ci-bot").
+  Memories stored with an `agent_id` are only returned when the same
+  `agent_id` is supplied at recall time. Omit it for shared/global memories.
 - Be specific. "We use JWT RS256 because asymmetric keys let the API gateway
   verify without the signing secret" is better than "We use JWT."
 
@@ -594,8 +667,8 @@ Output includes:
 
 | Tool | Description |
 |---|---|
-| `store` | Encode a memory with context metadata (auto-classifies type, auto-chunks, 500K char limit). Pass `overwrite=true` to replace a near-duplicate instead of rejecting. |
-| `recall` | Retrieve by semantic similarity (auto-inferred filters, multi-probe, [Hebbian boost](#hebbian-boost), 10K char limit) |
+| `store` | Encode a memory with context metadata (auto-classifies type, auto-chunks, 500K char limit). Pass `overwrite=true` to replace a near-duplicate instead of rejecting. Pass `agent_id` to store in an isolated namespace. |
+| `recall` | Retrieve by semantic similarity (auto-inferred filters, multi-probe, [Hebbian boost](#hebbian-boost), 10K char limit). Pass `agent_id` to restrict results to that namespace. |
 | `forget` | Remove a specific memory by ID |
 | `pin_memory` | Pin a memory — always included in recall results |
 | `unpin_memory` | Remove a pin |
