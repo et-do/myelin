@@ -34,6 +34,7 @@ class MemoryMetadata(BaseModel):
     tags: list[str] = Field(default_factory=list)
     source: str | None = None  # e.g. "copilot", "cursor", "claude"
     parent_id: str | None = None  # group ID linking chunks from the same source
+    agent_id: str | None = None  # namespace isolation — agent or bot identifier
 
     def to_chroma(self) -> dict[str, str | int | float]:
         """Flatten to ChromaDB-compatible metadata (scalars only)."""
@@ -52,6 +53,8 @@ class MemoryMetadata(BaseModel):
             d["source"] = self.source
         if self.parent_id:
             d["parent_id"] = self.parent_id
+        if self.agent_id:
+            d["agent_id"] = self.agent_id
         return d
 
     @classmethod
@@ -66,6 +69,7 @@ class MemoryMetadata(BaseModel):
             tags=tags_raw.split(",") if tags_raw else [],
             source=meta.get("source"),
             parent_id=meta.get("parent_id"),
+            agent_id=meta.get("agent_id"),
         )
 
 
@@ -77,7 +81,7 @@ class Memory(BaseModel):
     metadata: MemoryMetadata = Field(default_factory=MemoryMetadata)
     created_at: datetime = Field(default_factory=_utcnow)
     last_accessed: datetime = Field(default_factory=_utcnow)
-    access_count: int = 0
+    access_count: int = 1  # starts at 1 — the store event itself is an access
     # Set by store(overwrite=True) when an existing memory was replaced.
     # Not persisted to storage; only present on the return value of store().
     replaced_id: str | None = Field(default=None, exclude=True)

@@ -60,6 +60,7 @@ def cmd_debug_recall(args: argparse.Namespace) -> None:
         language=args.language or "",
         scope=args.scope or "",
         memory_type=args.memory_type or "",
+        agent_id=args.agent_id or "",
     )
 
     if args.json:
@@ -242,6 +243,9 @@ def main() -> None:
     p_debug.add_argument("--scope", default="", help="Filter by scope")
     p_debug.add_argument(
         "--memory-type", dest="memory_type", default="", help="Filter by memory_type"
+    )
+    p_debug.add_argument(
+        "--agent-id", dest="agent_id", default="", help="Filter by agent namespace"
     )
     p_debug.add_argument(
         "--json", action="store_true", help="Output raw JSON instead of formatted text"

@@ -306,3 +306,60 @@ class TestSignalHandler:
 
         with _pytest.raises(SystemExit):
             _signal_handler(15, None)  # covers server.py line 135
+
+
+class TestAgentNamespace:
+    """Verify agent_id namespace isolation across store and recall."""
+
+    def test_agent_scoped_memory_not_returned_for_other_agent(self) -> None:
+        """Memories stored under agent-a must not appear for agent-b."""
+        do_store(
+            "The OIDC service handles all SSO login flows for agent-a",
+            agent_id="agent-a",
+        )
+        results = do_recall("OIDC single sign-on", agent_id="agent-b")
+        ids = [r["id"] for r in results]
+        agent_a_result = do_recall("OIDC single sign-on", agent_id="agent-a")
+        agent_a_ids = [r["id"] for r in agent_a_result]
+        # agent-a's memory must not be visible to agent-b
+        for aid in agent_a_ids:
+            assert aid not in ids
+
+    def test_agent_scoped_memory_returned_for_same_agent(self) -> None:
+        """Memories stored with agent_id are returned for the same agent_id."""
+        result = do_store(
+            "The rate limiter uses a sliding-window token bucket algorithm",
+            agent_id="copilot-bot",
+        )
+        stored_id = result["id"]
+        results = do_recall("rate limiting sliding window", agent_id="copilot-bot")
+        assert any(r["id"] == stored_id for r in results)
+
+    def test_empty_agent_id_stores_in_global_namespace(self) -> None:
+        """Memories with no agent_id are accessible without an agent filter."""
+        result = do_store("Global shared memory about the API gateway design")
+        stored_id = result["id"]
+        results = do_recall("API gateway design")
+        assert any(r["id"] == stored_id for r in results)
+
+    def test_agent_id_stored_in_metadata(self) -> None:
+        """agent_id is persisted in ChromaDB and round-trips correctly."""
+        from myelin.server import _get_hippocampus
+
+        do_store(
+            "The feature flag service uses LaunchDarkly for all products",
+            agent_id="scout-bot",
+        )
+        hc = _get_hippocampus()
+        all_meta = hc.get_all_metadata()
+        scout_mems = [m for m in all_meta if m.get("agent_id") == "scout-bot"]
+        assert len(scout_mems) == 1
+
+    def test_no_agent_id_filter_returns_global_memories(self) -> None:
+        """Recalling without agent_id should return memories with no agent_id set."""
+        result = do_store(
+            "The deployment pipeline uses ArgoCD for GitOps continuous delivery"
+        )
+        stored_id = result["id"]
+        results = do_recall("deployment pipeline ArgoCD GitOps")
+        assert any(r["id"] == stored_id for r in results)
