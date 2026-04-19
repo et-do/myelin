@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/et-do/myelin/compare/v0.2.1...v0.2.2) (2026-04-19)
+
+
+### Bug Fixes
+
+* create benchmarks/perf/ before writing benchmark JSON ([#40](https://github.com/et-do/myelin/issues/40)) ([fe07af7](https://github.com/et-do/myelin/commit/fe07af78bb1106ddb0d8e62d5b8e89b8874f281a))
+* publish on tag ([#41](https://github.com/et-do/myelin/issues/41)) ([97f3105](https://github.com/et-do/myelin/commit/97f31055e235feb2bf263891d36c1c5ac859747a))
+
 ## [0.2.1](https://github.com/et-do/myelin/compare/v0.2.0...v0.2.1) (2026-04-19)
 
 
