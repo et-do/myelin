@@ -65,7 +65,8 @@ Releases are fully automated via [release-please](https://github.com/googleapis/
 1. Merge PRs with conventional commits into `main`
 2. Release-please accumulates changes and opens a **Release PR** with a version bump + CHANGELOG
 3. When you're ready to cut a release, merge the Release PR
-4. A GitHub Release + tag is created automatically, and `pyproject.toml` version is bumped
+4. A GitHub Release + version tag is created automatically
+5. The tag triggers `publish.yml`: full regression gate (~60 min) → PyPI publish if it passes
 
 You never need to manually edit the version number.
 
@@ -88,7 +89,7 @@ In practice: use `feat:` freely for new features — each one bumps `0.X → 0.X
 | **security** | PR only | Dependency vulnerability audit (OSV database). |
 | **benchmark** | Push to main only | Latency micro-benchmarks (informational, doesn't gate merges). |
 | **regression** (smoke) | Push to main (myelin/** changes) | ~12 LME + 1 LoCoMo conversation; fails if recall drops >2pp from baseline. |
-| **regression** (full) | Release merge only | ~54 LME + 2 LoCoMo conversations; blocks PyPI publish on failure. |
+| **regression** (full) + **publish** | `v*` tag push (every release) | ~54 LME + 2 LoCoMo conversations; blocks PyPI publish on failure. |
 
 ### Running checks locally
 

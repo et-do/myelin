@@ -6,12 +6,18 @@ on:
     paths:
       - "myelin/**"
       - "benchmarks/regression/**"
-  # Called by release-please.yml when a release is created (full=true).
-  # Also callable manually for local baseline creation.
+  # Called by publish.yml on tag push (full=true) and by manual workflow_dispatch.
   workflow_call:
     inputs:
       full:
         description: "Run full benchmark suite (release mode — ~60 min)"
+        type: boolean
+        default: false
+  # Manual trigger for running smoke or full regression on demand.
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "Run full benchmark suite"
         type: boolean
         default: false
 
@@ -23,12 +29,9 @@ jobs:
     name: Regression gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
-    # Skip the push-triggered smoke run when a release commit fires this
-    # workflow at the same time as the workflow_call from release-please.yml.
-    # Release commits follow the pattern "chore(main): release X.Y.Z".
-    if: >-
-      github.event_name == 'workflow_call' ||
-      !startsWith(github.event.head_commit.message, 'chore(main): release')
+    # No if: condition needed. The path filter on the push trigger already
+    # prevents smoke from firing on release commits (which only touch
+    # pyproject.toml/CHANGELOG.md, not myelin/** or benchmarks/regression/**).
     steps:
       - name: Checkout
         uses: actions/checkout@v4
