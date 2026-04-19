@@ -117,6 +117,21 @@ uv run mypy myelin/ --strict
 uv run pre-commit run --all-files
 ```
 
+## Repository Settings
+
+Branch and tag protection rulesets are stored as JSON in `.github/` and applied via the `gh` CLI — **not** managed through the GitHub UI.
+
+After editing a `*-protection.json` file, apply the changes:
+
+```bash
+# Requires: gh CLI authenticated + jq installed
+.github/apply-rulesets.sh
+```
+
+The script PATCHes each ruleset by its numeric `id` field. Running it multiple times is safe (idempotent).
+
+> **Required status check names** must exactly match what GitHub Actions reports: `CI / <job name> (pull_request)` — note the underscore, not a space.
+
 ## Project Structure
 
 ```
