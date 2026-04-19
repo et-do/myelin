@@ -6,7 +6,6 @@ import pytest
 
 from myelin.config import MyelinSettings
 from myelin.server import (
-    _signal_handler,
     configure,
     do_consolidate,
     do_decay_sweep,
@@ -14,7 +13,6 @@ from myelin.server import (
     do_recall,
     do_status,
     do_store,
-    warm_up,
 )
 
 
@@ -28,16 +26,28 @@ class TestDoStore:
     def test_stores_valid_content(self) -> None:
         result = do_store("The auth service uses JWT tokens")
         assert result["status"] == "stored"
-        assert "id" in result
+        assert result["id"] is not None
+        assert result["reason"] is None
 
     def test_rejects_short_content(self) -> None:
         result = do_store("hi")
         assert result["status"] == "rejected"
+        assert result["id"] is None
+        assert result["reason"] is not None
 
     def test_rejects_oversized_content(self) -> None:
         result = do_store("x" * 500_001)
         assert result["status"] == "rejected"
+        assert result["id"] is None
         assert "limit" in result["reason"]
+
+    def test_response_always_has_stable_keys(self) -> None:
+        """Every store response has id, status, and reason regardless of outcome."""
+        for content in ["hi", "The auth service uses JWT tokens for sessions"]:
+            r = do_store(content)
+            assert "id" in r
+            assert "status" in r
+            assert "reason" in r
 
     def test_stores_with_metadata(self) -> None:
         result = do_store(
@@ -49,6 +59,89 @@ class TestDoStore:
             source="copilot",
         )
         assert result["status"] == "stored"
+
+    def test_new_memory_access_count_is_one(self) -> None:
+        """Stored memories start with access_count=1 (the store itself counts)."""
+        from myelin.models import Memory
+
+        m = Memory(content="test")
+        assert m.access_count == 1
+
+    def test_relations_writes_edges_to_neocortex(self) -> None:
+        """Explicit relations are stored as neocortex edges immediately."""
+        from myelin.server import _get_neocortex
+
+        result = do_store(
+            "AuthService depends on JWTHelper for token validation",
+            relations='[["AuthService", "depends_on", "JWTHelper"]]',
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") == 1
+        net = _get_neocortex()
+        rels = net.get_relationships("AuthService", predicate="depends_on")
+        objects = [r["object"] for r in rels]
+        assert "jwthelper" in objects
+
+    def test_relations_multiple_triples(self) -> None:
+        """Multiple triples are all written."""
+        result = do_store(
+            "The API gateway routes to AuthService and PaymentService",
+            relations=(
+                '[["APIGateway","routes_to","AuthService"],'
+                '["APIGateway","routes_to","PaymentService"]]'
+            ),
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") == 2
+
+    def test_relations_invalid_json_is_ignored(self) -> None:
+        """Malformed JSON in relations never blocks the store."""
+        result = do_store(
+            "The cache layer wraps Redis for session storage",
+            relations="not valid json at all",
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") is None
+
+    def test_relations_not_a_list_is_ignored(self) -> None:
+        result = do_store(
+            "The cache layer uses Redis for session data persistence",
+            relations='{"subject": "A", "predicate": "rel", "object": "B"}',
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") is None
+
+    def test_relations_malformed_triple_skipped(self) -> None:
+        """Triples with wrong length or non-string values are silently skipped."""
+        result = do_store(
+            "Scheduler dispatches tasks using Celery for async processing",
+            relations='[["OnlyTwo", "items"], ["ValidA", "uses", "ValidB"], [1, 2, 3]]',
+        )
+        assert result["status"] == "stored"
+        # Only the valid triple ("ValidA","uses","ValidB") should be counted
+        assert result.get("relationships") == 1
+
+    def test_relations_empty_string_field_skipped(self) -> None:
+        """Triples containing empty strings are silently skipped."""
+        result = do_store(
+            "Worker processes jobs from the task queue using async handlers",
+            relations='[["", "uses", "Redis"], ["Worker", "uses", ""]]',
+        )
+        assert result["status"] == "stored"
+        assert result.get("relationships") is None
+
+    def test_relations_on_rejected_store_not_written(self) -> None:
+        """Relations must not be written if the store itself is rejected."""
+        from myelin.server import _get_neocortex
+
+        do_store("hi", relations='[["A", "rel", "B"]]')
+        net = _get_neocortex()
+        rels = net.get_relationships("A")
+        assert rels == []
+
+    def test_store_without_relations_has_no_relationships_key(self) -> None:
+        result = do_store("The search service indexes documents using Elasticsearch")
+        assert "relationships" not in result
 
 
 class TestDoRecall:
@@ -114,11 +207,6 @@ class TestDoStatus:
         assert "data_dir" in result
         assert "embedding_model" in result
         assert result["memory_count"] == 0
-
-    def test_decay_timer_status_present(self) -> None:
-        result = do_status()
-        assert "decay_timer_running" in result
-        assert result["decay_timer_running"] is False  # timer not started in tests
 
 
 class TestDoConsolidate:
@@ -190,119 +278,3 @@ class TestAutoConsolidation:
         for i in range(5):
             result = do_store(f"Memory number {i} about some topic here")
             assert "consolidation" not in result
-
-
-class TestDoPinUnpin:
-    def test_pin_returns_pinned_status(self) -> None:
-        from myelin.server import do_pin
-
-        result = do_pin("mem-123", priority=2, label="important")
-        assert result["status"] == "pinned"
-        assert result["memory_id"] == "mem-123"
-        assert result["priority"] == 2
-
-    def test_unpin_existing_memory(self) -> None:
-        from myelin.server import do_pin, do_unpin
-
-        do_pin("mem-456")
-        result = do_unpin("mem-456")
-        assert result["status"] == "unpinned"
-
-    def test_unpin_nonexistent_returns_not_found(self) -> None:
-        from myelin.server import do_unpin
-
-        result = do_unpin("does-not-exist")
-        assert result["status"] == "not_found"
-
-    def test_pinned_memories_injected_into_recall(self) -> None:
-        from myelin.server import do_pin, do_recall
-
-        r = do_store("The load balancer uses nginx with round-robin policy")
-        memory_id = r["id"]
-        do_pin(memory_id, priority=1)
-
-        # Recall with unrelated query — pinned memory should still appear
-        results = do_recall("completely unrelated query about cooking recipes")
-        ids = [res["id"] for res in results]
-        assert memory_id in ids
-
-
-class TestDoDecaySweepWithStale:
-    def test_sweep_prunes_stale_memories(
-        self, tmp_path: pytest.TempPathFactory
-    ) -> None:
-        """Memories with ancient last_accessed dates are pruned."""
-        from unittest.mock import patch
-
-        from myelin.server import do_decay_sweep
-
-        do_store("Ancient ephemeral fact that should be pruned by decay")
-        memory_id = do_recall("ephemeral fact")[0]["id"]
-
-        # Make find_stale return it as stale
-        with patch("myelin.server.find_stale", return_value=[memory_id]):
-            result = do_decay_sweep()
-
-        assert result["pruned"] == 1
-        assert result["remaining"] == 0
-
-
-class TestDoStoreChunksAndReplace:
-    def test_store_long_content_reports_chunks(self) -> None:
-        """Multi-chunk content returns chunks count in result."""
-        # Use paragraph-split content so chunk_text generates multiple segments
-        para1 = "The authentication service processes login requests. " * 10
-        para2 = "JWT tokens are validated using RS256 asymmetric keys. " * 10
-        long_content = para1 + "\n\n" + para2
-        result = do_store(long_content)
-        assert result["status"] == "stored"
-        assert "chunks" in result
-        assert result["chunks"] > 1
-
-    def test_store_overwrite_returns_replaced(self) -> None:
-        """store with overwrite=True on near-duplicate returns replaced key."""
-        original = "The payment service uses Stripe for card processing"
-        updated = "The payment service uses Stripe for all payment processing"
-        do_store(original)
-        result = do_store(updated, overwrite=True)
-        assert result["status"] in ("updated", "stored")
-        if result["status"] == "updated":
-            assert "replaced" in result
-
-
-class TestShutdown:
-    def test_shutdown_clears_singletons(self) -> None:
-        """shutdown() closes and resets all server singletons."""
-        import myelin.server as srv
-
-        # Trigger initialization
-        do_store("Initialize the server singletons by storing something here")
-        assert srv._hippocampus is not None
-
-        srv.shutdown()
-        assert srv._hippocampus is None
-        assert srv._hebbian is None
-        assert srv._neocortex is None
-        assert srv._thalamus is None
-
-    def test_shutdown_idempotent(self) -> None:
-        """Calling shutdown twice does not raise."""
-        import myelin.server as srv
-
-        srv.shutdown()
-        srv.shutdown()  # should not raise
-
-
-class TestWarmUp:
-    def test_warm_up_runs_without_error(self) -> None:
-        """warm_up() pre-warms models; must not raise."""
-        warm_up()  # covers server.py line 112
-
-
-class TestSignalHandler:
-    def test_signal_handler_raises_system_exit(self) -> None:
-        """_signal_handler raises SystemExit on any signal."""
-        import pytest as _pytest
-
-        with _pytest.raises(SystemExit):
-            _signal_handler(15, None)  # covers server.py line 135

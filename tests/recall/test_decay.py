@@ -81,3 +81,28 @@ class TestFindStale:
             max_idle_days_absolute=365,
         )
         assert sorted(stale) == ["prune_abs", "prune_low"]
+
+    def test_skips_row_with_missing_last_accessed(self) -> None:
+        """Rows missing last_accessed are skipped, not crashed."""
+        good = self._make_meta("good", days_ago=120, access_count=1)
+        bad = {"id": "bad"}  # no last_accessed key
+        result = find_stale(
+            [good, bad],
+            max_idle_days=90,
+            min_access_count=2,
+            max_idle_days_absolute=365,
+        )
+        assert result == ["good"]  # bad row silently skipped
+
+    def test_skips_row_with_invalid_last_accessed(self) -> None:
+        """Rows with unparseable timestamps are skipped."""
+        meta = [{"id": "x", "last_accessed": "not-a-date", "access_count": 0}]
+        result = find_stale(meta, max_idle_days=90, min_access_count=2)
+        assert result == []
+
+    def test_tolerates_missing_access_count(self) -> None:
+        """Missing access_count defaults to 0 (prune-eligible)."""
+        last = (datetime.now(UTC) - timedelta(days=120)).isoformat()
+        meta = [{"id": "a", "last_accessed": last}]  # no access_count
+        result = find_stale(meta, max_idle_days=90, min_access_count=2)
+        assert result == ["a"]
