@@ -41,6 +41,7 @@
 - [Setup Guides](#setup-guides)
   - [Personal (Cross-Project)](#personal-cross-project)
   - [Per-Repository](#per-repository)
+  - [Multi-Agent (Shared Instance, Isolated Namespaces)](#multi-agent-shared-instance-isolated-namespaces)
   - [Team / Cloud](#team--cloud)
 - [Teaching Your Agent](#teaching-your-agent)
 - [Results](#results)
@@ -195,6 +196,49 @@ Create a `.vscode/mcp.json` in the repo:
 - **Gitignore `.myelin/`** — each developer builds their own memory. Add `.myelin/` to `.gitignore`. Good for personal workflow memory you don't want to share.
 
 **3. Add agent instructions** (see [Teaching Your Agent](#teaching-your-agent) below).
+
+### Multi-Agent (Shared Instance, Isolated Namespaces)
+
+**Best for:** Multiple trusted agents sharing one Myelin data directory, each
+working from its own memory pool.
+
+Myelin filters recalls by `agent_id` at the database level — a recall with
+`agent_id="copilot"` will never return a memory stored with `agent_id="ci-bot"`.
+The filter is unconditional once applied.
+
+**However, `agent_id` is not authenticated.** The server accepts whatever
+value the caller supplies. Any agent — or user — that knows another agent's
+`agent_id` can read and write to that namespace. There is no credential,
+token, or OS-level enforcement preventing this.
+
+This means `agent_id` is a **namespace convention for cooperating agents**,
+not an access-control boundary. It is appropriate when:
+- Agents are trusted (same team, same deployment)
+- The goal is preventing accidental cross-contamination between agent contexts
+- You are not trying to hide memories from a potentially adversarial caller
+
+If hard isolation is a requirement, run separate Myelin instances pointing at
+separate data directories.
+
+**To keep agents in their own namespace**, add a line to each agent's
+instructions file (`.github/copilot-instructions.md` or equivalent):
+
+```markdown
+Always pass agent_id="copilot" on every myelin store and recall call.
+```
+
+Without this instruction, an agent may omit `agent_id` and write to the global
+namespace — visible to all callers regardless of `agent_id`.
+
+The global namespace (no `agent_id`) is intentional for shared project context
+that every agent should see, such as architectural decisions and conventions.
+
+```bash
+# Scope a debug-recall diagnostic to one namespace
+myelin debug-recall "auth approach" --agent-id copilot
+```
+
+---
 
 ### Team / Cloud
 
@@ -594,8 +638,8 @@ Output includes:
 
 | Tool | Description |
 |---|---|
-| `store` | Encode a memory with context metadata (auto-classifies type, auto-chunks, 500K char limit). Pass `overwrite=true` to replace a near-duplicate instead of rejecting. |
-| `recall` | Retrieve by semantic similarity (auto-inferred filters, multi-probe, [Hebbian boost](#hebbian-boost), 10K char limit) |
+| `store` | Encode a memory with context metadata (auto-classifies type, auto-chunks, 500K char limit). Pass `overwrite=true` to replace a near-duplicate instead of rejecting. Pass `agent_id` to store in an isolated namespace. |
+| `recall` | Retrieve by semantic similarity (auto-inferred filters, multi-probe, [Hebbian boost](#hebbian-boost), 10K char limit). Pass `agent_id` to restrict results to that namespace. |
 | `forget` | Remove a specific memory by ID |
 | `pin_memory` | Pin a memory — always included in recall results |
 | `unpin_memory` | Remove a pin |

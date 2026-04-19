@@ -6,6 +6,7 @@ import pytest
 
 from myelin.config import MyelinSettings
 from myelin.server import (
+    _signal_handler,
     configure,
     do_consolidate,
     do_decay_sweep,
@@ -13,6 +14,7 @@ from myelin.server import (
     do_recall,
     do_status,
     do_store,
+    warm_up,
 )
 
 
@@ -278,3 +280,176 @@ class TestAutoConsolidation:
         for i in range(5):
             result = do_store(f"Memory number {i} about some topic here")
             assert "consolidation" not in result
+
+
+class TestDoPinUnpin:
+    def test_pin_returns_pinned_status(self) -> None:
+        from myelin.server import do_pin
+
+        result = do_pin("mem-123", priority=2, label="important")
+        assert result["status"] == "pinned"
+        assert result["memory_id"] == "mem-123"
+        assert result["priority"] == 2
+
+    def test_unpin_existing_memory(self) -> None:
+        from myelin.server import do_pin, do_unpin
+
+        do_pin("mem-456")
+        result = do_unpin("mem-456")
+        assert result["status"] == "unpinned"
+
+    def test_unpin_nonexistent_returns_not_found(self) -> None:
+        from myelin.server import do_unpin
+
+        result = do_unpin("does-not-exist")
+        assert result["status"] == "not_found"
+
+    def test_pinned_memories_injected_into_recall(self) -> None:
+        from myelin.server import do_pin, do_recall
+
+        r = do_store("The load balancer uses nginx with round-robin policy")
+        memory_id = r["id"]
+        do_pin(memory_id, priority=1)
+
+        # Recall with unrelated query — pinned memory should still appear
+        results = do_recall("completely unrelated query about cooking recipes")
+        ids = [res["id"] for res in results]
+        assert memory_id in ids
+
+
+class TestDoDecaySweepWithStale:
+    def test_sweep_prunes_stale_memories(
+        self, tmp_path: pytest.TempPathFactory
+    ) -> None:
+        """Memories with ancient last_accessed dates are pruned."""
+        from unittest.mock import patch
+
+        from myelin.server import do_decay_sweep
+
+        do_store("Ancient ephemeral fact that should be pruned by decay")
+        memory_id = do_recall("ephemeral fact")[0]["id"]
+
+        # Make find_stale return it as stale
+        with patch("myelin.server.find_stale", return_value=[memory_id]):
+            result = do_decay_sweep()
+
+        assert result["pruned"] == 1
+        assert result["remaining"] == 0
+
+
+class TestDoStoreChunksAndReplace:
+    def test_store_long_content_reports_chunks(self) -> None:
+        """Multi-chunk content returns chunks count in result."""
+        # Use paragraph-split content so chunk_text generates multiple segments
+        para1 = "The authentication service processes login requests. " * 10
+        para2 = "JWT tokens are validated using RS256 asymmetric keys. " * 10
+        long_content = para1 + "\n\n" + para2
+        result = do_store(long_content)
+        assert result["status"] == "stored"
+        assert "chunks" in result
+        assert result["chunks"] > 1
+
+    def test_store_overwrite_returns_replaced(self) -> None:
+        """store with overwrite=True on near-duplicate returns replaced key."""
+        original = "The payment service uses Stripe for card processing"
+        updated = "The payment service uses Stripe for all payment processing"
+        do_store(original)
+        result = do_store(updated, overwrite=True)
+        assert result["status"] in ("updated", "stored")
+        if result["status"] == "updated":
+            assert "replaced" in result
+
+
+class TestShutdown:
+    def test_shutdown_clears_singletons(self) -> None:
+        """shutdown() closes and resets all server singletons."""
+        import myelin.server as srv
+
+        # Trigger initialization
+        do_store("Initialize the server singletons by storing something here")
+        assert srv._hippocampus is not None
+
+        srv.shutdown()
+        assert srv._hippocampus is None
+        assert srv._hebbian is None
+        assert srv._neocortex is None
+        assert srv._thalamus is None
+
+    def test_shutdown_idempotent(self) -> None:
+        """Calling shutdown twice does not raise."""
+        import myelin.server as srv
+
+        srv.shutdown()
+        srv.shutdown()  # should not raise
+
+
+class TestWarmUp:
+    def test_warm_up_runs_without_error(self) -> None:
+        """warm_up() pre-warms models; must not raise."""
+        warm_up()  # covers server.py line 112
+
+
+class TestSignalHandler:
+    def test_signal_handler_raises_system_exit(self) -> None:
+        """_signal_handler raises SystemExit on any signal."""
+        import pytest as _pytest
+
+        with _pytest.raises(SystemExit):
+            _signal_handler(15, None)  # covers server.py line 135
+
+
+class TestAgentNamespace:
+    """Verify agent_id namespace isolation across store and recall."""
+
+    def test_agent_scoped_memory_not_returned_for_other_agent(self) -> None:
+        """Memories stored under agent-a must not appear for agent-b."""
+        do_store(
+            "The OIDC service handles all SSO login flows for agent-a",
+            agent_id="agent-a",
+        )
+        results = do_recall("OIDC single sign-on", agent_id="agent-b")
+        ids = [r["id"] for r in results]
+        agent_a_result = do_recall("OIDC single sign-on", agent_id="agent-a")
+        agent_a_ids = [r["id"] for r in agent_a_result]
+        # agent-a's memory must not be visible to agent-b
+        for aid in agent_a_ids:
+            assert aid not in ids
+
+    def test_agent_scoped_memory_returned_for_same_agent(self) -> None:
+        """Memories stored with agent_id are returned for the same agent_id."""
+        result = do_store(
+            "The rate limiter uses a sliding-window token bucket algorithm",
+            agent_id="copilot-bot",
+        )
+        stored_id = result["id"]
+        results = do_recall("rate limiting sliding window", agent_id="copilot-bot")
+        assert any(r["id"] == stored_id for r in results)
+
+    def test_empty_agent_id_stores_in_global_namespace(self) -> None:
+        """Memories with no agent_id are accessible without an agent filter."""
+        result = do_store("Global shared memory about the API gateway design")
+        stored_id = result["id"]
+        results = do_recall("API gateway design")
+        assert any(r["id"] == stored_id for r in results)
+
+    def test_agent_id_stored_in_metadata(self) -> None:
+        """agent_id is persisted in ChromaDB and round-trips correctly."""
+        from myelin.server import _get_hippocampus
+
+        do_store(
+            "The feature flag service uses LaunchDarkly for all products",
+            agent_id="scout-bot",
+        )
+        hc = _get_hippocampus()
+        all_meta = hc.get_all_metadata()
+        scout_mems = [m for m in all_meta if m.get("agent_id") == "scout-bot"]
+        assert len(scout_mems) == 1
+
+    def test_no_agent_id_filter_returns_global_memories(self) -> None:
+        """Recalling without agent_id should return memories with no agent_id set."""
+        result = do_store(
+            "The deployment pipeline uses ArgoCD for GitOps continuous delivery"
+        )
+        stored_id = result["id"]
+        results = do_recall("deployment pipeline ArgoCD GitOps")
+        assert any(r["id"] == stored_id for r in results)

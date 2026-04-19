@@ -293,6 +293,7 @@ class Hippocampus:
         language: str | None = None,
         scope: str | None = None,
         memory_type: str | None = None,
+        agent_id: str | None = None,
         auto_filter: bool = True,
         reference_date: datetime | None = None,
     ) -> list[RecallResult]:
@@ -321,6 +322,7 @@ class Hippocampus:
                 language=language,
                 scope=scope,
                 memory_type=memory_type,
+                agent_id=agent_id,
                 auto_filter=auto_filter,
                 reference_date=reference_date,
             )
@@ -334,6 +336,7 @@ class Hippocampus:
         language: str | None = None,
         scope: str | None = None,
         memory_type: str | None = None,
+        agent_id: str | None = None,
         auto_filter: bool = True,
         reference_date: datetime | None = None,
     ) -> list[RecallResult]:
@@ -362,6 +365,7 @@ class Hippocampus:
                 language=language,
                 scope=scope,
                 memory_type=memory_type,
+                agent_id=agent_id,
                 auto_filter=auto_filter,
                 reference_date=reference_date,
             )
@@ -545,6 +549,7 @@ class Hippocampus:
         language: str | None = None,
         scope: str | None = None,
         memory_type: str | None = None,
+        agent_id: str | None = None,
         auto_filter: bool = True,
         reference_date: datetime | None = None,
     ) -> list[RecallResult]:
@@ -593,6 +598,7 @@ class Hippocampus:
             language=language,
             scope=scope,
             memory_type=memory_type,
+            agent_id=agent_id,
         )
 
         # Dual-pathway retrieval: when auto-filters are active, run both
@@ -606,6 +612,7 @@ class Hippocampus:
                 language=language,
                 scope=scope or auto_scope,
                 memory_type=memory_type or auto_memory_type,
+                agent_id=agent_id,
             )
             filtered = self._collection.query(
                 query_embeddings=[embedding],

@@ -227,6 +227,7 @@ def do_store(
     tags: str = "",
     source: str = "",
     overwrite: bool = False,
+    agent_id: str = "",
     relations: str = "",
 ) -> dict[str, Any]:
     """Store a memory.
@@ -249,6 +250,7 @@ def do_store(
         memory_type=memory_type or None,
         tags=[t.strip() for t in tags.split(",") if t.strip()] if tags else [],
         source=source or None,
+        agent_id=agent_id or None,
     )
     hc = _get_hippocampus()
     count_before = hc.count()
@@ -333,6 +335,7 @@ def do_recall(
     scope: str = "",
     memory_type: str = "",
     reference_date: datetime | None = None,
+    agent_id: str = "",
 ) -> list[dict[str, Any]]:
     """Recall memories. Returns list of result dicts."""
     if len(query) > _MAX_QUERY_CHARS:
@@ -344,6 +347,7 @@ def do_recall(
         language=language or None,
         scope=scope or None,
         memory_type=memory_type or None,
+        agent_id=agent_id or None,
         reference_date=reference_date or datetime.now(UTC),
     )
 
@@ -525,6 +529,7 @@ def do_debug_recall(
     language: str = "",
     scope: str = "",
     memory_type: str = "",
+    agent_id: str = "",
 ) -> dict[str, Any]:
     """Recall with full pipeline transparency for debugging.
 
@@ -561,6 +566,7 @@ def do_debug_recall(
         language=language or None,
         scope=scope or None,
         memory_type=memory_type or None,
+        agent_id=agent_id or None,
         reference_date=datetime.now(UTC),
     )
     if raw_results:
@@ -584,6 +590,7 @@ def do_debug_recall(
         "language": language or None,
         "scope": scope or None,
         "memory_type": memory_type or None,
+        "agent_id": agent_id or None,
         "auto_memory_type": qplan.memory_type if not memory_type else None,
         "auto_scope": qplan.scope_hint if not scope else None,
     }
@@ -680,6 +687,7 @@ def store(
     tags: str = "",
     source: str = "",
     overwrite: bool = False,
+    agent_id: str = "",
     relations: str = "",
 ) -> str:
     """Store a memory with optional context metadata.
@@ -696,6 +704,9 @@ def store(
             memory, replace the old memory instead of rejecting.  The
             response will include ``"replaced": <old_parent_id>`` and
             ``"status": "updated"``.
+        agent_id: Namespace identifier for the storing agent or bot.
+            Memories tagged with an agent_id are only returned when the
+            same agent_id is supplied at recall time.
         relations: JSON-encoded list of [subject, predicate, object] triples
             to assert as relationship edges immediately, e.g.
             ``'[["AuthService","depends_on","JWTHelper"]]'``.
@@ -715,6 +726,7 @@ def store(
                 tags,
                 source,
                 overwrite,
+                agent_id,
                 relations,
             )
         )
@@ -729,6 +741,7 @@ def recall(
     scope: str = "",
     memory_type: str = "",
     reference_date: str = "",
+    agent_id: str = "",
 ) -> str:
     """Recall memories relevant to a query.
 
@@ -742,6 +755,9 @@ def recall(
             (episodic/semantic/procedural/prospective).
         reference_date: ISO-8601 date for temporal context
             (e.g. "2026-04-12"). Defaults to now.
+        agent_id: Namespace identifier — only returns memories stored
+            with the same agent_id.  Omit or leave empty to query the
+            global shared namespace.
 
     Returns:
         JSON array of matching memories with scores.
@@ -754,7 +770,9 @@ def recall(
             except ValueError:
                 pass
         return json.dumps(
-            do_recall(query, n_results, project, language, scope, memory_type, ref),
+            do_recall(
+                query, n_results, project, language, scope, memory_type, ref, agent_id
+            ),
             indent=2,
         )
 
