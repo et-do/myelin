@@ -1,0 +1,48 @@
+name: Publish
+
+# Triggered when release-please creates a version tag (e.g. v0.2.1).
+# Runs the full regression suite as a quality gate before publishing to PyPI.
+# Using a tag push — rather than release_created output — is more reliable
+# because tag creation is a pure git event that doesn't depend on the
+# release-please action's internal state.
+on:
+  push:
+    tags:
+      - 'v[0-9]*'
+  # Manual trigger: use when a re-publish is needed without creating a new tag
+  # (e.g. after fixing a transient CI failure).
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Full regression gate ──────────────────────────────────────────────────
+  # Runs ~54 LME questions + 2 LoCoMo conversations (~60 min).
+  # Fails if any recall metric drops more than 2pp below the baseline.
+  # Publish is blocked until this passes.
+  regression:
+    name: Full regression gate
+    uses: ./.github/workflows/regression.yml
+    with:
+      full: true
+
+  # ── Publish to PyPI ───────────────────────────────────────────────────────
+  # Uses OIDC trusted publishing — no API token required.
+  # Blocked by regression; a quality regression cannot ship.
+  publish:
+    name: Publish to PyPI
+    needs: [regression]
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write  # Required for OIDC trusted publishing
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+      - name: Build distribution
+        run: uv build
+      - name: Publish to PyPI
+        run: uv publish --trusted-publishing automatic
