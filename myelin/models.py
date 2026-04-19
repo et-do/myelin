@@ -77,7 +77,7 @@ class Memory(BaseModel):
     metadata: MemoryMetadata = Field(default_factory=MemoryMetadata)
     created_at: datetime = Field(default_factory=_utcnow)
     last_accessed: datetime = Field(default_factory=_utcnow)
-    access_count: int = 0
+    access_count: int = 1  # starts at 1 — the store event itself is an access
     # Set by store(overwrite=True) when an existing memory was replaced.
     # Not persisted to storage; only present on the return value of store().
     replaced_id: str | None = Field(default=None, exclude=True)
