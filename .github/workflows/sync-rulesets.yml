@@ -1,0 +1,25 @@
+name: Sync branch rulesets
+
+# Applies *-protection.json files to GitHub whenever they change on main.
+# Uses GITHUB_TOKEN with administration: write — no PAT required.
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/*-protection.json'
+
+permissions:
+  administration: write
+
+jobs:
+  apply:
+    name: Apply rulesets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Apply rulesets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: .github/apply-rulesets.sh

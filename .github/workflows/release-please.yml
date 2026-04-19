@@ -17,5 +17,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: googleapis/release-please-action@v4
+        id: release
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+
+      # release-please bumps pyproject.toml but doesn't regenerate uv.lock.
+      # These steps check out the Release PR branch and commit an updated
+      # uv.lock so CI never fails with a stale lockfile after a release.
+      - name: Checkout Release PR branch
+        if: ${{ steps.release.outputs.pr }}
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ fromJSON(steps.release.outputs.pr).headBranchName }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up uv
+        if: ${{ steps.release.outputs.pr }}
+        uses: astral-sh/setup-uv@v5
+
+      - name: Regenerate uv.lock for release version
+        if: ${{ steps.release.outputs.pr }}
+        run: |
+          uv lock
+          if git diff --quiet uv.lock; then
+            echo "uv.lock already up to date"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add uv.lock
+          git commit -m "chore: update uv.lock for release"
+          git push

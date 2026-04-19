@@ -3,6 +3,7 @@
     "image": "mcr.microsoft.com/devcontainers/python:3.13",
     "features": {
         "ghcr.io/devcontainers-extra/features/uv:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {}
     },
     // Named volume for .venv so host venv doesn't conflict with container Linux venv
     "mounts": [

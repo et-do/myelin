@@ -1,0 +1,28 @@
+{
+  "id": 15266655,
+  "name": "release-protection",
+  "target": "branch",
+  "source_type": "Repository",
+  "source": "et-do/myelin",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "exclude": [],
+      "include": [
+        "refs/heads/v*"
+      ]
+    }
+  },
+  "rules": [
+    {
+      "type": "deletion"
+    },
+    {
+      "type": "non_fast_forward"
+    },
+    {
+      "type": "update"
+    }
+  ],
+  "bypass_actors": []
+}
