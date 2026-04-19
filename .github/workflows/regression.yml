@@ -6,12 +6,12 @@ on:
     paths:
       - "myelin/**"
       - "benchmarks/regression/**"
-  # Triggered directly by release-please.yml when a release is created.
-  # workflow_call passes `full` mode for the heavy release regression.
+  # Called by release-please.yml when a release is created (full=true).
+  # Also callable manually for local baseline creation.
   workflow_call:
     inputs:
       full:
-        description: "Run full benchmark (release mode)"
+        description: "Run full benchmark suite (release mode — ~60 min)"
         type: boolean
         default: false
 
@@ -20,19 +20,27 @@ permissions:
 
 jobs:
   regression:
+    name: Regression gate (${{ inputs.full == true && 'full' || 'smoke' }} mode)
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    # Skip the push-triggered smoke run when a release commit fires this
+    # workflow at the same time as the workflow_call from release-please.yml.
+    # Release commits follow the pattern "chore(main): release X.Y.Z".
+    if: >-
+      github.event_name == 'workflow_call' ||
+      !startsWith(github.event.head_commit.message, 'chore(main): release')
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - uses: astral-sh/setup-uv@v5
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
 
       - name: Install dependencies
         run: uv sync --extra dev
 
       # Cache HuggingFace models (sentence-transformers + cross-encoder).
-      # Key is the embedding/cross-encoder model names from config so a model
-      # change invalidates the cache automatically.
+      # Key tracks config.py so a model name change invalidates the cache.
       - name: Cache HuggingFace models
         uses: actions/cache@v4
         with:
@@ -40,9 +48,9 @@ jobs:
           key: hf-models-${{ hashFiles('myelin/config.py') }}
           restore-keys: hf-models-
 
-      # Cache LongMemEval data (downloaded from HuggingFace).  Key is based on
-      # the download script so a data source change forces a fresh download.
-      - name: Cache LME benchmark data
+      # Cache LongMemEval data. Key tracks the download script so a source
+      # change forces a fresh download.
+      - name: Cache LongMemEval data
         id: lme-cache
         uses: actions/cache@v4
         with:
@@ -53,8 +61,8 @@ jobs:
         if: steps.lme-cache.outputs.cache-hit != 'true'
         run: bash benchmarks/longmemeval/download_data.sh
 
-      # Cache LoCoMo data (downloaded from snap-research/locomo on GitHub).
-      - name: Cache LoCoMo benchmark data
+      # Cache LoCoMo data (snap-research/locomo on GitHub).
+      - name: Cache LoCoMo data
         id: locomo-cache
         uses: actions/cache@v4
         with:
@@ -65,9 +73,9 @@ jobs:
         if: steps.locomo-cache.outputs.cache-hit != 'true'
         run: bash benchmarks/locomo/download_data.sh
 
-      # Rolling baseline cache: key is unique per commit so it never hits on a
-      # fresh push, but restore-keys fall back to the most recent prior entry.
-      # This gives us a stable rolling baseline without a separate storage solution.
+      # Rolling baseline cache: unique key per commit means it never hits on
+      # a fresh push, but restore-keys fall back to the most recent prior
+      # entry — giving a stable rolling baseline without extra storage.
       - name: Restore regression baseline
         id: baseline
         uses: actions/cache/restore@v4
@@ -77,10 +85,10 @@ jobs:
           restore-keys: |
             regression-baseline-v1-
 
-      - name: Run regression (or create initial baseline)
+      - name: Run regression check (or create initial baseline)
         run: |
           FULL_FLAG=""
-          if [ "${{ inputs.full }}" = "true" ]; then
+          if [[ "${{ inputs.full }}" == "true" ]]; then
             FULL_FLAG="--full"
           fi
           if [ -f benchmarks/regression/baseline/lme_scores.json ]; then
@@ -91,8 +99,8 @@ jobs:
             uv run python -m benchmarks.regression.run --create-baseline $FULL_FLAG
           fi
 
-      # Only persist a new baseline when the run passes so a regression on
-      # commit N doesn't become the new "baseline" that masks the issue.
+      # Only save a new baseline when the run passes so a regression on
+      # commit N doesn't silently become the new baseline.
       - name: Save regression baseline
         if: success()
         uses: actions/cache/save@v4

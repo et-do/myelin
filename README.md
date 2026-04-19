@@ -16,6 +16,7 @@
   <p>
     <a href="https://github.com/et-do/myelin/blob/main/LICENSE"><img src="https://img.shields.io/github/license/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="License"></a>
     <a href="https://pypi.org/project/myelin-mcp/"><img src="https://img.shields.io/pypi/v/myelin-mcp?colorA=363a4f&colorB=b7bdf8&label=pypi" alt="PyPI"></a>
+    <a href="https://github.com/et-do/myelin/actions/workflows/ci.yml"><img src="https://github.com/et-do/myelin/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
     <a href="https://github.com/et-do/myelin/stargazers"><img src="https://img.shields.io/github/stars/et-do/myelin?colorA=363a4f&colorB=b7bdf8&style=flat" alt="Stars"></a>
     <a href="https://github.com/et-do/myelin/issues"><img src="https://img.shields.io/github/issues/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="Issues"></a>
     <a href="https://github.com/et-do/myelin/commits/main"><img src="https://img.shields.io/github/last-commit/et-do/myelin?colorA=363a4f&colorB=b7bdf8" alt="Last Commit"></a>

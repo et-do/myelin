@@ -26,7 +26,7 @@ We use a trunk-based workflow. All work goes through PRs into `main`.
 1. **Branch off main**: `git checkout -b feat/my-feature`
 2. **Use conventional commits** (see below)
 3. **Open a PR** into `main`
-4. CI runs lint, tests, type checking, and dependency review
+4. CI runs lint, type checks, tests, build verification, and a dependency vulnerability audit
 5. **Squash and merge** when all checks pass (keeps `main` history clean and avoids duplicate changelog entries)
 
 ### Conventional Commits
@@ -77,17 +77,30 @@ In practice: use `feat:` freely for new features — each one bumps `0.X → 0.X
 
 ## Quality Checks
 
-All of these run in CI and should pass before merging:
+### CI jobs
+
+| Job | Runs on | Purpose |
+|-----|---------|--------|
+| **lint** | PR + push to main | `ruff` lint + format, lockfile freshness. All other jobs wait for this. |
+| **typecheck** | PR + push to main | `mypy --strict` across the full package. |
+| **test** | PR + push to main | `pytest` with coverage report. |
+| **build** | PR + push to main | Builds wheel + sdist; uploads as artifact. |
+| **security** | PR only | Dependency vulnerability audit (OSV database). |
+| **benchmark** | Push to main only | Latency micro-benchmarks (informational, doesn't gate merges). |
+| **regression** (smoke) | Push to main (myelin/** changes) | ~12 LME + 1 LoCoMo conversation; fails if recall drops >2pp from baseline. |
+| **regression** (full) | Release merge only | ~54 LME + 2 LoCoMo conversations; blocks PyPI publish on failure. |
+
+### Running checks locally
 
 ```bash
 # Verify uv.lock is in sync with pyproject.toml (run after editing pyproject.toml)
 uv lock --check
 
 # Tests with coverage
-uv run pytest -v --cov=myelin
+uv run pytest -q --tb=short --cov=myelin
 
 # Skip slow MCP integration tests (spawns a real server subprocess) during local dev
-uv run pytest -v --cov=myelin -m "not integration"
+uv run pytest -q --tb=short --cov=myelin -m "not integration"
 
 # Run integration tests explicitly
 uv run pytest -m integration -v
@@ -157,11 +170,21 @@ uv run python -m benchmarks.locomo.score benchmarks/locomo/output/myelin_locomo.
 
 ### Regression Gate
 
-Fast subset (54 LME + 304 LoCoMo questions). Fails if any metric drops >2pp below baseline.
+Two modes — both fail if any metric drops >2pp below baseline.
 
+**Smoke** (default, ~15 min — runs on every push to main that touches `myelin/`):
 ```bash
+# On first run — creates the baseline for future comparisons:
 uv run python -m benchmarks.regression.run --create-baseline
+
+# Subsequent runs — checks against the baseline:
 uv run python -m benchmarks.regression.run
+```
+
+**Full** (~60 min — runs as a gate before every PyPI release):
+```bash
+uv run python -m benchmarks.regression.run --full --create-baseline
+uv run python -m benchmarks.regression.run --full
 ```
 
 ### Latency Benchmarks
