@@ -19,8 +19,17 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
 
-  publish:
+  # Full regression suite runs only when a release is actually being created.
+  # Blocks publish so a quality regression can't ship to PyPI.
+  regression:
     needs: release-please
+    if: ${{ needs.release-please.outputs.release_created == 'true' }}
+    uses: ./.github/workflows/regression.yml
+    with:
+      full: true
+
+  publish:
+    needs: [release-please, regression]
     if: ${{ needs.release-please.outputs.release_created == 'true' }}
     runs-on: ubuntu-latest
     environment: pypi
