@@ -5,16 +5,25 @@ results against a frozen baseline.  Catches regressions before a full
 benchmark run.
 
 Subset sizes:
-    LongMemEval_S:  ~50 questions (8-9 per category)
-    LoCoMo:         2 conversations (~300 questions)
-    Total runtime:  ~10 minutes vs ~3 hours for full runs
+    Smoke (default — every push to main):
+        LongMemEval_S:  ~12 questions (2 per category)
+        LoCoMo:         1 conversation (~100 questions)
+        Total runtime:  ~15 minutes
+
+    Full (release mode — blocks PyPI publish):
+        LongMemEval_S:  ~54 questions (9 per category)
+        LoCoMo:         2 conversations (~300 questions)
+        Total runtime:  ~60 minutes
 
 Usage:
     # Create baseline from current best results:
     uv run python -m benchmarks.regression.run --create-baseline
 
-    # Run regression check against baseline:
+    # Run smoke check (default, every main push):
     uv run python -m benchmarks.regression.run
+
+    # Run full suite (release gate):
+    uv run python -m benchmarks.regression.run --full
 """
 
 from __future__ import annotations
@@ -31,16 +40,22 @@ from typing import Any
 # Subset selection
 # ---------------------------------------------------------------------------
 
-# LongMemEval: 8-9 questions per type (stratified), ~50 total
-_LME_PER_TYPE = 9
-# LoCoMo: 2 conversations (pick smallest + medium for speed)
-_LOCOMO_CONV_IDS = ["conv-30", "conv-26"]  # 105 + 199 = 304 QA
+# Smoke (every push to main): 2 questions per type, ~12 total
+_LME_PER_TYPE_SMOKE = 2
+# Full (release gate): 9 questions per type, ~54 total
+_LME_PER_TYPE_FULL = 9
+
+# LoCoMo: smoke uses 1 small conversation; full uses 2
+_LOCOMO_CONV_IDS_SMOKE = ["conv-30"]  # ~105 QA
+_LOCOMO_CONV_IDS_FULL = ["conv-30", "conv-26"]  # 105 + 199 = 304 QA
 
 _DATA_DIR = Path(__file__).resolve().parent.parent
 _BASELINE_DIR = _DATA_DIR / "regression" / "baseline"
 
 
-def _select_lme_subset(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _select_lme_subset(
+    data: list[dict[str, Any]], per_type: int
+) -> list[dict[str, Any]]:
     """Pick a stratified subset of LongMemEval questions."""
     by_type: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for q in data:
@@ -50,20 +65,19 @@ def _select_lme_subset(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for qtype in sorted(by_type):
         questions = by_type[qtype]
         # Deterministic selection: take evenly-spaced indices
-        step = max(1, len(questions) // _LME_PER_TYPE)
+        step = max(1, len(questions) // per_type)
         for i in range(0, len(questions), step):
             subset.append(questions[i])
-            if (
-                len([q for q in subset if q.get("question_type") == qtype])
-                >= _LME_PER_TYPE
-            ):
+            if len([q for q in subset if q.get("question_type") == qtype]) >= per_type:
                 break
     return subset
 
 
-def _select_locomo_subset(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _select_locomo_subset(
+    data: list[dict[str, Any]], conv_ids: list[str]
+) -> list[dict[str, Any]]:
     """Pick the predefined LoCoMo conversations."""
-    return [s for s in data if s.get("sample_id") in _LOCOMO_CONV_IDS]
+    return [s for s in data if s.get("sample_id") in conv_ids]
 
 
 # ---------------------------------------------------------------------------
@@ -336,6 +350,11 @@ def _track_locomo_flips(
 def main() -> None:
     """Run regression gate or create baseline."""
     create_baseline = "--create-baseline" in sys.argv
+    full = "--full" in sys.argv
+
+    lme_per_type = _LME_PER_TYPE_FULL if full else _LME_PER_TYPE_SMOKE
+    locomo_ids = _LOCOMO_CONV_IDS_FULL if full else _LOCOMO_CONV_IDS_SMOKE
+    mode_label = "full (release)" if full else "smoke (push)"
 
     # Load data
     lme_path = _DATA_DIR / "longmemeval" / "data" / "longmemeval_s_cleaned.json"
@@ -352,11 +371,11 @@ def main() -> None:
     lme_data = json.loads(lme_path.read_text())
     locomo_data = json.loads(locomo_path.read_text())
 
-    lme_subset = _select_lme_subset(lme_data)
-    locomo_subset = _select_locomo_subset(locomo_data)
+    lme_subset = _select_lme_subset(lme_data, lme_per_type)
+    locomo_subset = _select_locomo_subset(locomo_data, locomo_ids)
 
     print(f"\n{'=' * 60}", flush=True)
-    print("  Myelin Regression Gate", flush=True)
+    print(f"  Myelin Regression Gate  [{mode_label}]", flush=True)
     print(f"{'=' * 60}", flush=True)
     print(f"  LME subset:    {len(lme_subset)} questions", flush=True)
     locomo_qa = sum(len(s["qa"]) for s in locomo_subset)

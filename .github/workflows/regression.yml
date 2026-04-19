@@ -6,6 +6,14 @@ on:
     paths:
       - "myelin/**"
       - "benchmarks/regression/**"
+  # Triggered directly by release-please.yml when a release is created.
+  # workflow_call passes `full` mode for the heavy release regression.
+  workflow_call:
+    inputs:
+      full:
+        description: "Run full benchmark (release mode)"
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -13,7 +21,7 @@ permissions:
 jobs:
   regression:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
 
@@ -71,12 +79,16 @@ jobs:
 
       - name: Run regression (or create initial baseline)
         run: |
+          FULL_FLAG=""
+          if [ "${{ inputs.full }}" = "true" ]; then
+            FULL_FLAG="--full"
+          fi
           if [ -f benchmarks/regression/baseline/lme_scores.json ]; then
             echo "Baseline found — running regression check"
-            uv run python -m benchmarks.regression.run
+            uv run python -m benchmarks.regression.run $FULL_FLAG
           else
             echo "No baseline found — creating initial baseline for next run"
-            uv run python -m benchmarks.regression.run --create-baseline
+            uv run python -m benchmarks.regression.run --create-baseline $FULL_FLAG
           fi
 
       # Only persist a new baseline when the run passes so a regression on
