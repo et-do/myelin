@@ -20,7 +20,7 @@ permissions:
 
 jobs:
   regression:
-    name: Regression gate (${{ inputs.full == true && 'full' || 'smoke' }} mode)
+    name: Regression gate
     runs-on: ubuntu-latest
     timeout-minutes: 90
     # Skip the push-triggered smoke run when a release commit fires this
