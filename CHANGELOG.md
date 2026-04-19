@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/et-do/myelin/compare/v0.2.0...v0.2.1) (2026-04-19)
+
+
+### Bug Fixes
+
+* remove unevaluated inputs expression from regression job name ([#38](https://github.com/et-do/myelin/issues/38)) ([7595c4a](https://github.com/et-do/myelin/commit/7595c4a62377aac4cb3248c141f187579ae9521c))
+
 ## [0.2.0](https://github.com/et-do/myelin/compare/v0.1.2...v0.2.0) (2026-04-19)
 
 
