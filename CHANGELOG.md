@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.2.0](https://github.com/et-do/myelin/compare/v0.1.2...v0.2.0) (2026-04-19)
+
+
+### Features
+
+* add explicit relationship injection at store time ([#31](https://github.com/et-do/myelin/issues/31)) ([d0284d3](https://github.com/et-do/myelin/commit/d0284d37e53a1adeda4df1ab677eabb1c842bec4))
+* add export-md and import-md CLI commands ([#33](https://github.com/et-do/myelin/issues/33)) ([334e7ec](https://github.com/et-do/myelin/commit/334e7ec8300e8f4c4fa6383dcf76514490fe7ee5))
+* add ingest tool for bulk memory loading from files and directories ([#32](https://github.com/et-do/myelin/issues/32)) ([0ba598b](https://github.com/et-do/myelin/commit/0ba598b203ecd33e80e9ef5492a9dccb24f1e9b5))
+* background worker for async consolidation and scheduled decay ([#24](https://github.com/et-do/myelin/issues/24)) ([30126d7](https://github.com/et-do/myelin/commit/30126d71d691cf9f1c8256acd41b45fa4e5450f6))
+* debug-recall CLI command with full pipeline breakdown ([#25](https://github.com/et-do/myelin/issues/25)) ([d952a19](https://github.com/et-do/myelin/commit/d952a191843c42b109caecbd892b5c581c183f4d))
+* multi agent namespace ([#34](https://github.com/et-do/myelin/issues/34)) ([b7a67c9](https://github.com/et-do/myelin/commit/b7a67c9cae44b31eb2296e6445142dd3f72f6149))
+* respond to MCP initialize immediately, warm up models in backgr… ([#15](https://github.com/et-do/myelin/issues/15)) ([36a721b](https://github.com/et-do/myelin/commit/36a721b93f2ff53347b001cf3d303a84ad3e6ff3))
+* storage cap with LRU eviction and auto-decay background timer ([#26](https://github.com/et-do/myelin/issues/26)) ([a27b46a](https://github.com/et-do/myelin/commit/a27b46ac15698d59b329d63a9cd74d377511fec6))
+* test coverage ([#19](https://github.com/et-do/myelin/issues/19)) ([5372199](https://github.com/et-do/myelin/commit/5372199eee04f0b00eeb751b556aae0842298964))
+
+
+### Bug Fixes
+
+* add LoCoMo data download step to regression CI ([#29](https://github.com/et-do/myelin/issues/29)) ([7e9fb9c](https://github.com/et-do/myelin/commit/7e9fb9c33311337349877c40e2cee242a8411837))
+* allow multiple MCP agent processes on the same data directory ([#20](https://github.com/et-do/myelin/issues/20)) ([cccd777](https://github.com/et-do/myelin/commit/cccd7776290f8c0fd5c4b2890f4a34496a13157e))
+* create benchmarks/perf/ before writing benchmark JSON ([#37](https://github.com/et-do/myelin/issues/37)) ([9424535](https://github.com/et-do/myelin/commit/942453501c6de7744143cdb8d80f9b7b360048a1))
+* harden decay against missing metadata and normalise store respon… ([#30](https://github.com/et-do/myelin/issues/30)) ([b1e6adc](https://github.com/et-do/myelin/commit/b1e6adcc7d9195dbd8338a2ed73472a7fe6478d4))
+
+
+### Performance Improvements
+
+* latency benchmarks ([#23](https://github.com/et-do/myelin/issues/23)) ([ddd4803](https://github.com/et-do/myelin/commit/ddd48031a0fc878a7c5b66c829763b9bb24c247d))
+
+
+### Documentation
+
+* update CONTRIBUTING versioning table and releases section ([ddd4803](https://github.com/et-do/myelin/commit/ddd48031a0fc878a7c5b66c829763b9bb24c247d))
+* update CONTRIBUTING versioning table and releases section ([3aa1aac](https://github.com/et-do/myelin/commit/3aa1aac2e4f51adabe3e38fd13c9d54738ab1742))
+
 ## [0.1.2](https://github.com/et-do/myelin/compare/v0.1.1...v0.1.2) (2026-04-16)
 
 
