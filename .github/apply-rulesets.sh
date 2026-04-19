@@ -45,9 +45,10 @@ apply_ruleset() {
   printf 'Applying %-30s (id: %s) ... ' "$name" "$id"
 
   # Strip read-only fields before sending to the API.
+  # The Rulesets API uses PUT (full replacement), not PATCH.
   jq 'del(.id, .source_type, .source)' "$file" \
     | gh api \
-        --method PATCH \
+        --method PUT \
         --header "Accept: application/vnd.github+json" \
         --header "X-GitHub-Api-Version: 2022-11-28" \
         "/repos/$REPO/rulesets/$id" \
