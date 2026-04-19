@@ -23,11 +23,28 @@ uv run pre-commit install
 
 We use a trunk-based workflow. All work goes through PRs into `main`.
 
-1. **Branch off main**: `git checkout -b feat/my-feature`
+1. **Branch off main** using a prefix that matches the conventional commit type you'll use (see table below)
 2. **Use conventional commits** (see below)
-3. **Open a PR** into `main`
+3. **Open a PR** — the PR title becomes the squash commit message on `main`, so write it as a conventional commit
 4. CI runs lint, type checks, tests, build verification, and a dependency vulnerability audit
 5. **Squash and merge** when all checks pass (keeps `main` history clean and avoids duplicate changelog entries)
+
+### Branch naming
+
+Branch names follow the same type prefixes as conventional commits. Pick the prefix that matches what will land on `main`:
+
+| Branch prefix | Use when | Triggers release? |
+|---------------|----------|-------------------|
+| `feat/description` | Adding new functionality | yes — minor bump |
+| `fix/description` | Fixing a bug in shipped code | yes — patch bump |
+| `ci/description` | CI/CD workflow changes | no |
+| `chore/description` | Maintenance, deps, tooling | no |
+| `docs/description` | Documentation only | no |
+| `refactor/description` | Code restructuring, no behaviour change | no |
+| `test/description` | Adding or updating tests | no |
+| `perf/description` | Performance improvement | no |
+
+> The branch name itself has no effect on tooling — only the squash commit message matters. Consistent naming is purely for human readability.
 
 ### Conventional Commits
 
