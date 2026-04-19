@@ -183,6 +183,39 @@ _MAX_CONTENT_CHARS = 500_000  # ~125K tokens
 _MAX_QUERY_CHARS = 10_000  # ~2.5K tokens
 
 
+def _inject_relations(relations: str) -> int:
+    """Parse a JSON-encoded list of [subject, predicate, object] triples and
+    write each as a relationship edge in the semantic network.
+
+    Silently skips malformed input so a bad ``relations`` value never blocks
+    an otherwise-valid store call.  Returns the number of edges written.
+    """
+    try:
+        raw = json.loads(relations)
+    except (json.JSONDecodeError, ValueError):
+        logger.debug("relations: invalid JSON, skipping")
+        return 0
+    if not isinstance(raw, list):
+        return 0
+    net = _get_neocortex()
+    count = 0
+    for item in raw:
+        if (
+            isinstance(item, (list, tuple))
+            and len(item) == 3
+            and all(isinstance(v, str) and v.strip() for v in item)
+        ):
+            net.add_relationship(
+                subject=item[0].strip(),
+                object_=item[2].strip(),
+                predicate=item[1].strip(),
+            )
+            count += 1
+        else:
+            logger.debug("relations: skipping malformed triple %r", item)
+    return count
+
+
 def do_store(
     content: str,
     project: str = "",
@@ -192,6 +225,7 @@ def do_store(
     tags: str = "",
     source: str = "",
     overwrite: bool = False,
+    relations: str = "",
 ) -> dict[str, Any]:
     """Store a memory.
 
@@ -248,6 +282,13 @@ def do_store(
         result["replaced"] = memory.replaced_id
     if chunks_stored > 1:
         result["chunks"] = chunks_stored
+
+    # Explicit relationship injection — parse before auto-consolidation so
+    # edges are immediately queryable without waiting for the next replay.
+    if relations:
+        rel_count = _inject_relations(relations)
+        if rel_count:
+            result["relationships"] = rel_count
 
     # Storage cap — evict LRU memories if we're over the limit.
     # Pinned memories (thalamic relay) are never evicted.
@@ -592,6 +633,7 @@ def store(
     tags: str = "",
     source: str = "",
     overwrite: bool = False,
+    relations: str = "",
 ) -> str:
     """Store a memory with optional context metadata.
 
@@ -607,6 +649,10 @@ def store(
             memory, replace the old memory instead of rejecting.  The
             response will include ``"replaced": <old_parent_id>`` and
             ``"status": "updated"``.
+        relations: JSON-encoded list of [subject, predicate, object] triples
+            to assert as relationship edges immediately, e.g.
+            ``'[["AuthService","depends_on","JWTHelper"]]'``.
+            Malformed input is silently ignored so it never blocks the store.
 
     Returns:
         JSON with memory ID on success, or rejection reason.
@@ -614,7 +660,15 @@ def store(
     with _track("store"):
         return json.dumps(
             do_store(
-                content, project, language, scope, memory_type, tags, source, overwrite
+                content,
+                project,
+                language,
+                scope,
+                memory_type,
+                tags,
+                source,
+                overwrite,
+                relations,
             )
         )
 
