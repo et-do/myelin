@@ -207,6 +207,26 @@ def cmd_import(args: argparse.Namespace) -> None:
     print(f"Imported {stored} memories ({skipped} skipped).")
 
 
+def cmd_ingest(args: argparse.Namespace) -> None:
+    from .server import configure, do_ingest
+
+    configure(settings)
+    result = do_ingest(
+        args.path,
+        project=args.project or "",
+        scope=args.scope or "",
+        source=args.source or "ingest",
+        recursive=not args.no_recursive,
+    )
+    print(
+        f"Ingested: {result['stored']} stored, "
+        f"{result['skipped']} skipped"
+        + (f", {len(result['errors'])} errors" if result["errors"] else "")
+    )
+    for err in result["errors"]:
+        print(f"  ERROR: {err}", file=sys.stderr)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         prog="myelin", description="Neuromorphic AI memory"
@@ -224,6 +244,21 @@ def main() -> None:
 
     p_import = sub.add_parser("import", help="Import memories from JSON")
     p_import.add_argument("input", help="JSON file to import")
+
+    p_ingest = sub.add_parser(
+        "ingest", help="Bulk-load memories from a file or directory"
+    )
+    p_ingest.add_argument("path", help="File or directory to ingest")
+    p_ingest.add_argument("--project", default="", help="Default project tag")
+    p_ingest.add_argument("--scope", default="", help="Default scope tag")
+    p_ingest.add_argument(
+        "--source", default="ingest", help="Source label (default: ingest)"
+    )
+    p_ingest.add_argument(
+        "--no-recursive",
+        action="store_true",
+        help="Do not recurse into subdirectories",
+    )
 
     p_debug = sub.add_parser(
         "debug-recall",
@@ -261,6 +296,7 @@ def main() -> None:
         "consolidate": cmd_consolidate,
         "export": cmd_export,
         "import": cmd_import,
+        "ingest": cmd_ingest,
         "debug-recall": cmd_debug_recall,
     }
     commands[args.command](args)

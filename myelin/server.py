@@ -12,12 +12,14 @@ import time
 from collections.abc import AsyncIterator, Iterator
 from contextlib import asynccontextmanager, contextmanager
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
 
 from .config import MyelinSettings, settings
+from .ingest import IngestResult, ingest_directory, ingest_file
 from .log import request_id, setup_logging
 from .models import MemoryMetadata, RecallResult
 from .recall import HebbianTracker, find_lru, find_stale
@@ -459,6 +461,51 @@ def do_consolidate() -> dict[str, Any]:
     }
 
 
+def do_ingest(
+    path: str,
+    *,
+    project: str = "",
+    scope: str = "",
+    source: str = "ingest",
+    recursive: bool = True,
+) -> dict[str, Any]:
+    """Bulk-load content from a file or directory into memory.
+
+    Supports ``.txt``, ``.md`` (with optional YAML frontmatter), and
+    ``.json`` (array of objects with a ``"content"`` key, as produced by
+    ``myelin export``).  When *path* is a directory every supported file
+    under it is ingested.
+
+    Frontmatter metadata in Markdown/text files overrides the *project*,
+    *scope*, *language*, *memory_type*, *tags*, and *source* defaults.
+
+    Returns a summary dict with ``stored``, ``skipped``, and ``errors``.
+    """
+    p = Path(path)
+    if p.is_dir():
+        result: IngestResult = ingest_directory(
+            p,
+            store_fn=do_store,
+            default_project=project,
+            default_scope=scope,
+            default_source=source,
+            recursive=recursive,
+        )
+    else:
+        result = ingest_file(
+            p,
+            store_fn=do_store,
+            default_project=project,
+            default_scope=scope,
+            default_source=source,
+        )
+    return {
+        "stored": result.stored,
+        "skipped": result.skipped,
+        "errors": result.errors,
+    }
+
+
 def do_pin(memory_id: str, priority: int = 1, label: str = "") -> dict[str, Any]:
     """Pin a memory for always-available retrieval (thalamic relay)."""
     _get_thalamus().pin(memory_id, priority, label or None)
@@ -795,6 +842,43 @@ def consolidate() -> str:
     """
     with _track("consolidate"):
         return json.dumps(do_consolidate())
+
+
+@mcp.tool()
+def ingest(
+    path: str,
+    project: str = "",
+    scope: str = "",
+    source: str = "ingest",
+    recursive: bool = True,
+) -> str:
+    """Bulk-load memories from a file or directory.
+
+    Supported formats:
+
+    - ``.txt`` / ``.md``: file body stored as one memory.  Optional YAML
+      frontmatter (between ``---`` delimiters) sets project, scope, language,
+      memory_type, tags, and source for that file.
+    - ``.json``: array of objects with a ``"content"`` key (same shape as
+      ``myelin export`` output).
+    - **directory**: recurse and ingest every supported file found.
+
+    Args:
+        path: Absolute or relative path to a file or directory.
+        project: Default project tag (overridden by per-file frontmatter).
+        scope: Default scope tag (overridden by per-file frontmatter).
+        source: Source label for all ingested memories.
+        recursive: Descend into subdirectories (default: true).
+
+    Returns:
+        JSON summary with stored, skipped, and errors counts.
+    """
+    with _track("ingest"):
+        return json.dumps(
+            do_ingest(
+                path, project=project, scope=scope, source=source, recursive=recursive
+            )
+        )
 
 
 @mcp.tool()
