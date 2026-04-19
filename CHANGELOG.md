@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.3](https://github.com/et-do/myelin/compare/v0.2.2...v0.2.3) (2026-04-19)
+
+
+### Documentation
+
+* document branch naming convention to match commit types ([#45](https://github.com/et-do/myelin/issues/45)) ([44fd048](https://github.com/et-do/myelin/commit/44fd04838af3daf4b5226a908de8c25dd644a81f))
+
 ## [0.2.2](https://github.com/et-do/myelin/compare/v0.2.1...v0.2.2) (2026-04-19)
 
 
