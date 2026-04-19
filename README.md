@@ -199,68 +199,43 @@ Create a `.vscode/mcp.json` in the repo:
 
 ### Multi-Agent (Shared Instance, Isolated Namespaces)
 
-**Best for:** Multiple bots or agents that share one Myelin instance but must
-not see each other's memories (e.g., a Copilot agent and a CI bot running
-against the same data directory).
+**Best for:** Multiple trusted agents sharing one Myelin data directory, each
+working from its own memory pool.
 
-Pass `agent_id` on every `store` and `recall` call:
+Myelin filters recalls by `agent_id` at the database level — a recall with
+`agent_id="copilot"` will never return a memory stored with `agent_id="ci-bot"`.
+The filter is unconditional once applied.
 
-```python
-# Copilot stores its own context
-store(content="Decided to use pgvector for embeddings", agent_id="copilot")
+**However, `agent_id` is not authenticated.** The server accepts whatever
+value the caller supplies. Any agent — or user — that knows another agent's
+`agent_id` can read and write to that namespace. There is no credential,
+token, or OS-level enforcement preventing this.
 
-# Copilot recalls only its own memories
-recall(query="database embedding strategy", agent_id="copilot")
+This means `agent_id` is a **namespace convention for cooperating agents**,
+not an access-control boundary. It is appropriate when:
+- Agents are trusted (same team, same deployment)
+- The goal is preventing accidental cross-contamination between agent contexts
+- You are not trying to hide memories from a potentially adversarial caller
 
-# CI bot has its own isolated namespace
-store(content="Build failed: missing env var DATABASE_URL", agent_id="ci-bot")
-recall(query="build failures", agent_id="ci-bot")
+If hard isolation is a requirement, run separate Myelin instances pointing at
+separate data directories.
+
+**To keep agents in their own namespace**, add a line to each agent's
+instructions file (`.github/copilot-instructions.md` or equivalent):
+
+```markdown
+Always pass agent_id="copilot" on every myelin store and recall call.
 ```
 
-- Memories stored **with** an `agent_id` are invisible to any other `agent_id`.
-- Memories stored **without** an `agent_id` live in the global namespace and
-  are returned by any recall that omits `agent_id`.
-- No configuration needed — `agent_id` is just a metadata field. Backward
-  compatible: existing memories without it remain fully accessible.
+Without this instruction, an agent may omit `agent_id` and write to the global
+namespace — visible to all callers regardless of `agent_id`.
 
-The `debug-recall` CLI also accepts `--agent-id` to scope diagnostic queries:
+The global namespace (no `agent_id`) is intentional for shared project context
+that every agent should see, such as architectural decisions and conventions.
 
 ```bash
-myelin debug-recall "embedding strategy" --agent-id copilot
-```
-
----
-
-### Multi-Agent (Shared Instance, Isolated Namespaces)
-
-**Best for:** Multiple bots or agents that share one Myelin instance but must
-not see each other's memories (e.g., a Copilot agent and a CI bot running
-against the same data directory).
-
-Pass `agent_id` on every `store` and `recall` call:
-
-```python
-# Copilot stores its own context
-store(content="Decided to use pgvector for embeddings", agent_id="copilot")
-
-# Copilot recalls only its own memories
-recall(query="database embedding strategy", agent_id="copilot")
-
-# CI bot has its own isolated namespace
-store(content="Build failed: missing env var DATABASE_URL", agent_id="ci-bot")
-recall(query="build failures", agent_id="ci-bot")
-```
-
-- Memories stored **with** an `agent_id` are invisible to any other `agent_id`.
-- Memories stored **without** an `agent_id` live in the global namespace and
-  are returned by any recall that omits `agent_id`.
-- No configuration needed — `agent_id` is just a metadata field. Backward
-  compatible: existing memories without it remain fully accessible.
-
-The `debug-recall` CLI also accepts `--agent-id` to scope diagnostic queries:
-
-```bash
-myelin debug-recall "embedding strategy" --agent-id copilot
+# Scope a debug-recall diagnostic to one namespace
+myelin debug-recall "auth approach" --agent-id copilot
 ```
 
 ---
@@ -332,10 +307,6 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 - Use `tags` for cross-cutting concerns (e.g., tags="performance,optimization").
 - Use `memory_type` when it's clear: "semantic" for decisions/facts,
   "procedural" for how-to, "episodic" for events, "prospective" for plans.
-- Use `agent_id` when multiple bots or agents share one Myelin instance and
-  need isolated namespaces (e.g., agent_id="copilot", agent_id="ci-bot").
-  Memories stored with an `agent_id` are only returned when the same
-  `agent_id` is supplied at recall time. Omit it for shared/global memories.
 - Be specific. "We use JWT RS256 because asymmetric keys let the API gateway
   verify without the signing secret" is better than "We use JWT."
 
