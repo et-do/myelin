@@ -113,7 +113,7 @@ In practice: use `feat:` freely for new features — each one bumps `0.X → 0.X
 | **Dependency vulnerability audit** | PR only | no | OSV database scan of new dependencies. |
 | **Regression gate** (smoke) | Push to main (`myelin/**` changes) | no (post-merge) | ~12 LME + 1 LoCoMo; fails if recall drops >2pp from baseline. |
 | **Latency benchmarks** | Weekly (Monday 06:00 UTC) + manual | no | `pytest-benchmark` micro-timings for store/recall. |
-| **Full regression + publish** | `v*` tag push (every release) | — | ~54 LME + 2 LoCoMo; blocks PyPI publish on failure. |
+| **Full regression + publish** | `v*` tag push (every release) | — | ~54 LME + 2 LoCoMo (~110 min); blocks PyPI publish on failure. |
 
 ### Running checks locally
 
@@ -236,20 +236,27 @@ uv run python -m benchmarks.locomo.score benchmarks/locomo/output/myelin_locomo.
 
 ### Regression Gate
 
-Two modes — both fail if any metric drops >2pp below baseline.
+Two modes — both fail if any metric drops >2pp below the committed baseline files in
+`benchmarks/regression/baseline/`. The baseline is **not** managed by the CI cache;
+the committed JSON files are the authoritative reference.
+
+**Updating the baseline** — run this locally after a genuine improvement (e.g. a new
+algorithm that scores higher) and commit the resulting JSON files:
+```bash
+# Smoke baseline (fast, ~15 min):
+uv run python -m benchmarks.regression.run --create-baseline
+
+# Full baseline (~110 min — only needed before a release if full scores changed):
+uv run python -m benchmarks.regression.run --full --create-baseline
+```
 
 **Smoke** (default, ~15 min — runs on every push to main that touches `myelin/`):
 ```bash
-# On first run — creates the baseline for future comparisons:
-uv run python -m benchmarks.regression.run --create-baseline
-
-# Subsequent runs — checks against the baseline:
 uv run python -m benchmarks.regression.run
 ```
 
-**Full** (~60 min — runs as a gate before every PyPI release):
+**Full** (~110 min — runs as a gate before every PyPI release):
 ```bash
-uv run python -m benchmarks.regression.run --full --create-baseline
 uv run python -m benchmarks.regression.run --full
 ```
 
