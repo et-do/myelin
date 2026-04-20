@@ -79,37 +79,13 @@ jobs:
         if: steps.locomo-cache.outputs.cache-hit != 'true'
         run: bash benchmarks/locomo/download_data.sh
 
-      # Rolling baseline cache: unique key per commit means it never hits on
-      # a fresh push, but restore-keys fall back to the most recent prior
-      # entry — giving a stable rolling baseline without extra storage.
-      - name: Restore regression baseline
-        id: baseline
-        uses: actions/cache/restore@v4
-        with:
-          path: benchmarks/regression/baseline
-          key: regression-baseline-v1-${{ github.sha }}
-          restore-keys: |
-            regression-baseline-v1-
-
-      - name: Run regression check (or create initial baseline)
+      # Baseline files are committed in benchmarks/regression/baseline/ and
+      # serve as the stable reference. No cache needed — rolling caches cause
+      # false positives when a lucky run inflates the stored scores.
+      - name: Run regression check
         run: |
           FULL_FLAG=""
           if [[ "${{ inputs.full }}" == "true" ]]; then
             FULL_FLAG="--full"
           fi
-          if [ -f benchmarks/regression/baseline/lme_scores.json ]; then
-            echo "Baseline found — running regression check"
-            uv run python -m benchmarks.regression.run $FULL_FLAG
-          else
-            echo "No baseline found — creating initial baseline for next run"
-            uv run python -m benchmarks.regression.run --create-baseline $FULL_FLAG
-          fi
-
-      # Only save a new baseline when the run passes so a regression on
-      # commit N doesn't silently become the new baseline.
-      - name: Save regression baseline
-        if: success()
-        uses: actions/cache/save@v4
-        with:
-          path: benchmarks/regression/baseline
-          key: regression-baseline-v1-${{ github.sha }}
+          uv run python -m benchmarks.regression.run $FULL_FLAG

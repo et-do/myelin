@@ -11,7 +11,14 @@ on:
       - 'v[0-9]*'
   # Manual trigger: use when a re-publish is needed without creating a new tag
   # (e.g. after fixing a transient CI failure).
+  # Set skip_regression=true to bypass the quality gate (use only when the
+  # regression suite already passed in a prior run for the same commit).
   workflow_dispatch:
+    inputs:
+      skip_regression:
+        description: "Skip regression gate (use only when it already passed)"
+        type: boolean
+        default: false
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
@@ -21,21 +28,24 @@ permissions:
 
 jobs:
   # ── Full regression gate ──────────────────────────────────────────────────
-  # Runs ~54 LME questions + 2 LoCoMo conversations (~60 min).
+  # Runs ~54 LME questions + 2 LoCoMo conversations (~110 min).
   # Fails if any recall metric drops more than 2pp below the baseline.
   # Publish is blocked until this passes.
+  # Skipped when workflow_dispatch is used with skip_regression=true.
   regression:
     name: Full regression gate
+    if: ${{ inputs.skip_regression != true }}
     uses: ./.github/workflows/regression.yml
     with:
       full: true
 
   # ── Publish to PyPI ───────────────────────────────────────────────────────
   # Uses OIDC trusted publishing — no API token required.
-  # Blocked by regression; a quality regression cannot ship.
+  # Blocked by regression unless skip_regression=true.
   publish:
     name: Publish to PyPI
     needs: [regression]
+    if: ${{ always() && (needs.regression.result == 'success' || needs.regression.result == 'skipped') }}
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
