@@ -1,7 +1,8 @@
 name: Sync branch rulesets
 
 # Applies *-protection.json files to GitHub whenever they change on main.
-# Uses GITHUB_TOKEN with administration: write — no PAT required.
+# Requires RELEASE_TOKEN (fine-grained PAT with administration: write) because
+# the GitHub Rulesets API is not accessible via GITHUB_TOKEN permissions.
 on:
   push:
     branches: [main]
@@ -12,7 +13,7 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 permissions:
-  administration: write
+  contents: read
 
 jobs:
   apply:
@@ -24,5 +25,5 @@ jobs:
 
       - name: Apply rulesets
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         run: .github/apply-rulesets.sh

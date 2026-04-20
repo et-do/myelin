@@ -1,0 +1,53 @@
+name: Latency benchmarks
+
+# Runs on a weekly schedule to track store/recall latency trends over time.
+# Also available manually. Does not gate any merges — informational only.
+# Moved out of ci.yml so it no longer runs on every push to main.
+on:
+  schedule:
+    - cron: '0 6 * * 1'  # Every Monday at 06:00 UTC
+  workflow_dispatch:
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Latency benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Install dependencies
+        run: uv sync --extra dev
+
+      - name: Cache HuggingFace models
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-models-${{ hashFiles('myelin/config.py') }}
+          restore-keys: hf-models-
+
+      - name: Run latency benchmarks
+        run: |
+          mkdir -p benchmarks/perf
+          uv run pytest tests/benchmarks/test_latency.py \
+            -p no:xdist \
+            --override-ini="addopts=" \
+            -m "not slow" \
+            --benchmark-json=benchmarks/perf/latest.json \
+            -q
+
+      - name: Upload benchmark results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-${{ github.run_id }}
+          path: benchmarks/perf/latest.json
+          retention-days: 90

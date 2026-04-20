@@ -104,16 +104,16 @@ In practice: use `feat:` freely for new features — each one bumps `0.X → 0.X
 
 ### CI jobs
 
-| Job | Runs on | Purpose |
-|-----|---------|--------|
-| **lint** | PR + push to main | `ruff` lint + format, lockfile freshness. All other jobs wait for this. |
-| **typecheck** | PR + push to main | `mypy --strict` across the full package. |
-| **test** | PR + push to main | `pytest` with coverage report. |
-| **build** | PR + push to main | Builds wheel + sdist; uploads as artifact. |
-| **security** | PR only | Dependency vulnerability audit (OSV database). |
-| **benchmark** | Push to main only | Latency micro-benchmarks (informational, doesn't gate merges). |
-| **regression** (smoke) | Push to main (myelin/** changes) | ~12 LME + 1 LoCoMo conversation; fails if recall drops >2pp from baseline. |
-| **regression** (full) + **publish** | `v*` tag push (every release) | ~54 LME + 2 LoCoMo conversations; blocks PyPI publish on failure. |
+| Job | Runs on | Blocks merge? | Purpose |
+|-----|---------|---------------|---------|
+| **Lint & format** | PR + push to main | yes | `ruff` lint + format, lockfile freshness. All other jobs wait for this. |
+| **Type check** | PR + push to main | yes | `mypy --strict` across the full package. |
+| **Unit & integration tests** | PR + push to main | yes | `pytest` with coverage report. |
+| **Build distribution** | PR + push to main | yes | Builds wheel + sdist; uploads as artifact. |
+| **Dependency vulnerability audit** | PR only | no | OSV database scan of new dependencies. |
+| **Regression gate** (smoke) | Push to main (`myelin/**` changes) | no (post-merge) | ~12 LME + 1 LoCoMo; fails if recall drops >2pp from baseline. |
+| **Latency benchmarks** | Weekly (Monday 06:00 UTC) + manual | no | `pytest-benchmark` micro-timings for store/recall. |
+| **Full regression + publish** | `v*` tag push (every release) | — | ~54 LME + 2 LoCoMo; blocks PyPI publish on failure. |
 
 ### Running checks locally
 
@@ -152,9 +152,35 @@ After editing a `*-protection.json` file, apply the changes:
 .github/apply-rulesets.sh
 ```
 
-The script PATCHes each ruleset by its numeric `id` field. Running it multiple times is safe (idempotent).
+The script PUTs each ruleset by its numeric `id` field. Running it multiple times is safe (idempotent).
 
-> **Required status check names** must exactly match what GitHub Actions reports: `CI / <job name> (pull_request)` — note the underscore, not a space.
+> **Required status check names** must match the raw job `name:` field from the workflow YAML — not the decorated `CI / Job name (pull_request)` string shown in the GitHub UI.
+
+## Administration
+
+This section is for repo admins only. Contributors do not need to read this.
+
+### RELEASE_TOKEN (fine-grained PAT)
+
+Several workflows require a fine-grained PAT stored as the `RELEASE_TOKEN` repo secret:
+
+| Workflow | Why GITHUB_TOKEN is insufficient |
+|----------|----------------------------------|
+| `release-please.yml` | Tags created by GITHUB_TOKEN don't trigger downstream `push:tags` events — `publish.yml` would never fire |
+| `sync-rulesets.yml` | The GitHub Rulesets API requires `administration: write`, which is not a valid GITHUB_TOKEN scope |
+
+**Required PAT permissions** (fine-grained, scoped to `et-do/myelin` only):
+- Contents: Read and write
+- Pull requests: Read and write
+- Administration: Read and write
+
+**Current token expiry: 2027-04-19.** Regenerate at https://github.com/settings/tokens?type=beta before expiry and update the `RELEASE_TOKEN` secret at https://github.com/et-do/myelin/settings/secrets/actions.
+
+If the token expires, release-please will silently fail to create tags and PyPI publish will stop firing.
+
+### PyPI trusted publisher
+
+Publishing uses OIDC (no API token). The trusted publisher must be configured at https://pypi.org/manage/project/myelin-mcp/settings/publishing/ to allow workflow `publish.yml` from repo `et-do/myelin`, environment `pypi`.
 
 ## Project Structure
 
