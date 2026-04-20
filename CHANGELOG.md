@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.4](https://github.com/et-do/myelin/compare/v0.2.3...v0.2.4) (2026-04-20)
+
+
+### Bug Fixes
+
+* export __version__ in package __all__ ([#50](https://github.com/et-do/myelin/issues/50)) ([d650e48](https://github.com/et-do/myelin/commit/d650e4895e14cff4b29df9f874c076d597280a1b))
+
 ## [0.2.3](https://github.com/et-do/myelin/compare/v0.2.2...v0.2.3) (2026-04-19)
 
 
