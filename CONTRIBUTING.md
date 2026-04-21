@@ -61,10 +61,10 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) to drive aut
 | `feat:` | New user-facing feature | **yes** | minor (`0.1.0 → 0.2.0`) |
 | `fix:` | Bug fix in shipped code | **yes** | patch (`0.1.0 → 0.1.1`) |
 | `feat!:` or `fix!:` | Breaking change | **yes** | major (`0.1.0 → 1.0.0`) |
-| `perf:` | Performance improvement | **yes** — patch | patch |
-| `deps:` | Dependency updates | **yes** — patch | patch |
-| `revert:` | Reverting a commit | **yes** — patch | patch |
-| `docs:` | Documentation only | **yes** — patch | patch |
+| `perf:` | Performance improvement | no (hidden in changelog) | — |
+| `deps:` | Dependency updates | no (hidden in changelog) | — |
+| `revert:` | Reverting a commit | no (hidden in changelog) | — |
+| `docs:` | Documentation only | no (hidden in changelog) | — |
 | `chore:` | Maintenance, tooling | no | — |
 | `ci:` | CI/CD changes | no | — |
 | `refactor:` | Code restructuring, no behaviour change | no | — |
@@ -72,7 +72,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) to drive aut
 | `build:` | Build system changes | no | — |
 | `style:` | Formatting, whitespace | no | — |
 
-All visible types appear in the CHANGELOG. `chore`, `ci`, `refactor`, `test`, `build`, and `style` are never shown and never trigger a release.
+Only `feat:`, `fix:`, and breaking changes (`!`) trigger a release and version bump. All other types (including `docs:`, `perf:`, `deps:`, `revert:`) appear hidden in the CHANGELOG but do **not** publish to PyPI. `chore`, `ci`, `refactor`, `test`, `build`, and `style` are never shown and never trigger a release.
 
 Examples:
 ```
