@@ -188,7 +188,6 @@ benchmarks/longmemeval/cache/
 benchmarks/locomo/data/
 benchmarks/locomo/output/
 benchmarks/regression/baseline/
-TODO.md
 benchmarks/longmemeval/cache.py
 benchmarks/perf/
 # Test artifact protection

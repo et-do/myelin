@@ -39,7 +39,7 @@ tests/benchmarks/test_latency.py -p no:xdist --override-ini="addopts=" -v):
 
 Latency budgets (asserted at test time):
   - Store:  < 200ms  (generous for cold-start / repo mounts)
-  - Recall: < 500ms  (hard SLA from TODO.md P0)
+  - Recall: < 500ms  (hard SLA from docs/TODO.md P0)
 
 Run options:
     # Fast suite (no n=1000 build)
@@ -260,7 +260,7 @@ _STORE_PROBES = [
 # ---------------------------------------------------------------------------
 
 _STORE_BUDGET_MS = 200.0  # generous for slow repo mounts / cold containers
-_RECALL_BUDGET_MS = 500.0  # hard SLA from TODO.md P0
+_RECALL_BUDGET_MS = 500.0  # hard SLA from docs/TODO.md P0
 
 
 def _assert_latency_budget(benchmark: object, budget_ms: float, label: str) -> None:

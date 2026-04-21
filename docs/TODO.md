@@ -58,8 +58,8 @@
 - [ ] ChromaDB HNSW compaction (rebuild index after large deletes)
 
 ### Embedding model migration
-- [ ] Plan for embedding model upgrades — all stored vectors become stale when model changes
-- [ ] Options: lazy re-encode on access, bulk migration script, or dual-index during transition
+- [x] Plan for embedding model upgrades — all stored vectors become stale when model changes — documented upgrade path in README Upgrading section (export → upgrade → import re-encodes)
+- [ ] Options: lazy re-encode on access, bulk migration script, or dual-index during transition — build tooling when model actually changes
 - [x] Store model version in ChromaDB collection metadata for detection
 
 ## P2 — Missing neuroscience-grounded features
@@ -134,6 +134,14 @@
 - [ ] Point-in-time backup strategy (ChromaDB snapshot + SQLite backup)
 - [ ] Memory versioning — when a preference updates, keep history (not just overwrite)
 - [x] CLI command: `myelin debug-recall "query"` — show full ranking breakdown for debugging
+
+## P2 — Documentation
+
+### README restructure
+- [x] Split 900-line README into focused README (~350 lines) + `docs/architecture.md` (detailed walkthroughs, neuroscience mapping, advanced config, data inspection)
+- [x] Add Upgrading section with patch/minor/major upgrade instructions and embedding model migration strategy
+- [x] Separate Configuration into common (README) and advanced (architecture doc)
+- [x] Add "Further Reading" links section to README
 
 ## P3 — Performance tuning (after production basics)
 
