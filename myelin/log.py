@@ -61,6 +61,14 @@ _NOISY_LOGGERS = (
     "sentence_transformers.cross_encoder",
     "huggingface_hub",
     "huggingface_hub.utils._http",
+    "httpx",
+    "chromadb",
+    "chromadb.telemetry",
+    "torch",
+    "onnxruntime",
+    "PIL",
+    "mcp",
+    "fastmcp",
 )
 
 
