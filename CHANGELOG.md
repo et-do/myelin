@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/et-do/myelin/compare/v0.2.4...v0.3.0) (2026-04-22)
+
+
+### Features
+
+* add myelin stats command — terminal KPI dashboard for memory da… ([#56](https://github.com/et-do/myelin/issues/56)) ([1c7368d](https://github.com/et-do/myelin/commit/1c7368d76a33ea96bc84465309624b05e3cf1cc1))
+
+
+### Bug Fixes
+
+* suppress noisy third-party loggers, log model load progress ([#58](https://github.com/et-do/myelin/issues/58)) ([21cf0ee](https://github.com/et-do/myelin/commit/21cf0ee223ca91b27a67dc4e616970a251f930d5))
+
 ## [0.2.4](https://github.com/et-do/myelin/compare/v0.2.3...v0.2.4) (2026-04-20)
 
 
