@@ -152,12 +152,12 @@ def cmd_stats(args: argparse.Namespace) -> None:
     decay_candidates = 0
 
     for m in all_meta:
-        by_type[m.get("memory_type") or "unknown"] += 1
-        by_project[m.get("project") or "(none)"] += 1
-        by_scope[m.get("scope") or "(none)"] += 1
-        by_region[m.get("ec_region") or "(none)"] += 1
+        by_type[str(m.get("memory_type") or "unknown")] += 1
+        by_project[str(m.get("project") or "(none)")] += 1
+        by_scope[str(m.get("scope") or "(none)")] += 1
+        by_region[str(m.get("ec_region") or "(none)")] += 1
 
-        acc = int(m.get("access_count") or 0)
+        acc = int(m.get("access_count") or 0)  # type: ignore[arg-type]
         if acc == 0:
             cold += 1
         elif acc == 1:
@@ -194,7 +194,7 @@ def cmd_stats(args: argparse.Namespace) -> None:
         if idle_days >= settings.max_idle_days and acc < settings.min_access_count:
             decay_candidates += 1
 
-    d = {
+    d: dict[str, Any] = {
         "total": total,
         "entity_count": entity_count,
         "relationship_count": relationship_count,
