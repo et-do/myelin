@@ -37,7 +37,7 @@ from .timer import DecayTimer
 async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
     """Start model warm-up and decay timer; clean up on shutdown."""
     loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, warm_up)
+    loop.run_in_executor(None, warm_up)
     _get_decay_timer().start()
     yield
     _get_decay_timer().stop()
