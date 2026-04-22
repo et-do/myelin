@@ -1,162 +1,85 @@
 # Myelin — Production Roadmap
 
-## P0 — Will break in production
+> Items without a checkbox are resolved. Open items are `[ ]`. Deferred items note the reason.
 
-### Error handling & logging
-- [x] Replace 6 bare `except Exception: pass` with logged exceptions (debug/warning level)
-- [x] Add module-level loggers to hippocampus.py, neocortex.py, activation.py
-- [x] Input size validation at API boundary (500K char store limit, 10K char query limit)
+---
 
-### Concurrency safety
-- [x] Add `threading.RLock` around all ChromaDB read/write operations in Hippocampus
-- [x] Add lock around SummaryIndex operations (covered by Hippocampus lock — SummaryIndex is called within locked methods)
-- [x] Add lock around SemanticNetwork SQLite operations
-- [x] Audit Hebbian tracker for concurrent write safety
-- [x] Enable SQLite WAL mode for concurrent reads during writes
-- [x] `check_same_thread=False` on SQLite connections (serialized by RLock)
-- [ ] Consider read-write lock (multiple concurrent reads, exclusive writes) — defer; single-client MCP, GIL limits parallelism, lock hold <300ms
+## P1 — Active work
 
-### Recall latency (currently ~1.4s production estimate, target <500ms)
-- [x] Batch gist retrieval pathway — collect all parent_ids, single `$or` query + ID fallback instead of N serial lookups (saves ~450ms)
-- [ ] Add query embedding cache (LRU, ~1000 entries) — same question twice shouldn't re-encode (saves 50ms on hit, but MCP queries are rarely identical — low ROI, defer)
-- [ ] Gate cross-encoder: skip if top bi-encoder score > high-confidence threshold (saves ~660ms on easy queries) — defer until profiling confirms CE is the bottleneck; risky to gate the key quality signal
-- [ ] Make cross-encoder opt-in per MCP tool call (`thorough=true`) — fast path by default — defer; changes MCP API surface
-- [x] Profile end-to-end recall to find actual bottleneck breakdown (embed / search / boost / rerank) — **Result: ~300ms avg on 5-session dataset** (embed 10-22ms, ChromaDB 3-9ms, gist 5-22ms, CE 40-80ms, multi-probe overhead ~150ms). Well under 500ms target.
-
-### Store latency (~185ms simple, ~600ms long) — defer to P1 background worker
-- [ ] Make gist embedding async — return from store() immediately, encode gist in background — needs P1 background worker (worker exists, gist not yet offloaded)
-- [ ] Make Hebbian weight update async — fire-and-forget after store completes — needs P1 background worker (worker exists, Hebbian not yet offloaded)
-- [ ] Make EC keyword extraction async — doesn't block the store's critical path — needs P1 background worker (worker exists, EC not yet offloaded)
-
-### Data integrity
-- [x] Wrap store() in try/except — gist indexing failures no longer crash store (chunks preserved)
-- [x] Add startup integrity check — verify chunk count matches summary count per parent_id — `Hippocampus.check_integrity()` + `myelin status` shows counts
-- [ ] Implement soft-delete (tombstone) before hard-delete in decay/forget — low risk since decay is manual CLI-only; move to P1
-
-## P1 — Will degrade over weeks/months
-
-### Cold start (~4s model load)
-- [x] Model warm-up on startup — encode a dummy query + cross-encode a dummy pair
-- [x] Lazy-load cross-encoder — only load on first recall that needs it, not at startup
-- [ ] Evaluate keeping models in shared memory across server restarts (mmap weights)
-
-### Background worker thread (async operations)
-- [x] Create single background worker with task queue
-- [x] Move consolidation to background worker (currently blocks every 50th store)
-- [x] Move decay sweep to background worker (currently manual CLI only)
+### Background worker (async hot path)
+Worker infrastructure exists; these operations still block store/recall:
 - [ ] Move gist embedding to background worker (fire after store returns)
 - [ ] Move Hebbian weight updates to background worker
 - [ ] Move periodic dedup sweep to background worker
-- [ ] Add idle detection — run heavy tasks (consolidation, dedup) only when no active requests
-- [x] Never run any background task inline with store() or recall() — falls back to inline only when worker not started (tests)
+- [ ] Add idle detection — run consolidation/dedup only when no active requests
 
 ### Unbounded growth
-- [x] Add hard storage cap (configurable max memories) with LRU eviction
-- [x] Auto-decay on background timer (not manual CLI)
-- [x] Fix immortal memory bug: access_count >= 2 should NOT exempt from all decay — added `max_idle_days_absolute=365` hard cap
-- [ ] Periodic dedup sweep — find and merge near-duplicate memories that slipped past gate
-- [ ] ChromaDB HNSW compaction (rebuild index after large deletes)
+- [ ] Periodic dedup sweep — find and merge near-duplicates that slipped past the gate
+- [ ] ChromaDB HNSW compaction after large-scale deletes
 
 ### Embedding model migration
-- [x] Plan for embedding model upgrades — all stored vectors become stale when model changes — documented upgrade path in README Upgrading section (export → upgrade → import re-encodes)
-- [ ] Options: lazy re-encode on access, bulk migration script, or dual-index during transition — build tooling when model actually changes
-- [x] Store model version in ChromaDB collection metadata for detection
+- [ ] Build migration tooling — lazy re-encode on access, bulk script, or dual-index — defer until model actually changes (detection + upgrade path already documented)
 
-## P2 — Missing neuroscience-grounded features
+### Data integrity
+- [ ] Soft-delete (tombstone) before hard delete in decay/forget — low risk, deferred from P0
 
-### Spreading activation
-- [x] Wire SemanticNetwork.spread() into recall for multi-entity queries
-- [x] Use entity graph expansion to generate additional query terms
-- [x] Particularly valuable for multi-session questions ("What connections between X and Y?")
-- [x] Integrated into hippocampus.recall() via multi-probe + post-retrieval boost (v8)
+---
 
-### Encoding context (Tulving's encoding specificity)
-- [ ] Store lightweight "situation embedding" at encoding time (what was the agent doing?)
-- [ ] During recall, boost memories where encoding context matches current context
-- [ ] Could use the conversation's recent turns as encoding context
+## P2 — Queued
 
-### Salience scoring (amygdala enhancement)
-- [ ] Compute salience at store time: information density, specificity, belief-update magnitude
-- [ ] Store salience as metadata, use as retrieval boost
-- [ ] High-salience memories should resist decay longer
+### MCP protocol completeness
+- [ ] Add `list_memories(project, scope, memory_type, limit)` MCP tool — lets agents browse without a semantic query ("what do you know about me?")
+- [ ] Tool annotations (MCP 0.9+): `readOnlyHint` on `recall`/`status`/`stats`/`health`; `destructiveHint` on `forget`/`decay_sweep`; `idempotentHint` on `pin_memory`/`unpin_memory`
+- [ ] Structured error responses — `store` rejections should return `isError: true` in the MCP tool result, not `{"status": "rejected"}` with 200
+- [ ] User/tenant isolation — `agent_id` is a soft filter today, not enforced at the collection boundary; a missing filter can leak across agents
+- [ ] Streaming recall — defer until MCP SDK streaming is mainstream
 
-### Fast familiarity reject gate
-- [ ] If all gist scores are below threshold, skip expensive cross-encoder AND gist pathway
-- [ ] Return "no relevant memories" fast instead of wasting compute on bad candidates
-- [ ] Mirrors brain's fast "nothing here" signal from perirhinal cortex
+### Recall quality (neuroscience-grounded)
+- [ ] Fast familiarity reject gate — if all gist scores are below threshold, skip cross-encoder entirely (mirrors perirhinal "nothing here" signal)
+- [ ] Salience scoring at store time — information density/specificity as a retrieval boost and decay resistance signal
+- [ ] Encoding context (Tulving specificity) — store a lightweight situation embedding at encode time, boost matching context on recall
+- [ ] Sleep replay — idle background thread replays recent episodes, strengthens cross-references, promotes recurring facts to semantic memory
 
-### Sleep replay / offline consolidation
-- [ ] Background thread that periodically replays recent memories during idle
-- [ ] Strengthen cross-references between related memories
-- [ ] Extract and store higher-level patterns ("user generally prefers X")
-- [ ] Promote frequently-accessed episodic memories to semantic facts
-
-## P2 — Production operability
+### Recall latency (deferred optimizations)
+- [ ] Query embedding cache (LRU ~1000) — low ROI since MCP queries are rarely identical, defer
+- [ ] Cross-encoder gating — skip CE when top bi-encoder score > high-confidence threshold; defer until profiling confirms CE is bottleneck
+- [ ] Cross-encoder opt-in per call (`thorough=true`) — changes API surface, defer
+- [ ] Parallel bi-encoder + gist search, async CE refinement
 
 ### Observability
-- [x] Structured logging (JSON) with request IDs
 - [ ] Latency histograms per operation (store, recall, rerank, gist, embed)
-- [ ] Memory count / storage size metrics exposed via MCP resource
-- [ ] Silent rejection logging (amygdala gate rejects with reason)
-- [ ] Recall audit trail — which signals contributed to ranking, what was considered and rejected
-
-### Startup / shutdown
-- [x] Graceful shutdown handler — flush pending background tasks, close ChromaDB + SQLite
-- [x] Health check endpoint (model loaded? ChromaDB responsive? background worker alive? disk space OK?) — lightweight `health` MCP tool
-- [x] Configuration validation on startup (reject invalid combos, warn on aggressive thresholds) — pydantic field validators for ranges, overlap < max, positive ints
-
-## P2 — Benchmark / production parity
-
-### Cached store path — private API coupling
-- [ ] Add `store_precomputed()` public method to Hippocampus (accepts pre-computed embeddings, still runs gate + metadata)
-- [ ] Migrate `run_instance_cached()` to use `store_precomputed()` instead of `hc._collection.add()` / `hc._summaries._collection.upsert()`
-- [ ] Remove direct calls to `Hippocampus._build_chroma_meta()`, `_attach_ec_coords()`, `_attach_session_date()`
-- [ ] Remove hardcoded `batch = 5000` — use config or Hippocampus method
-
-### Server private API usage
-- [x] `do_consolidate()` uses `hc._collection.get()` — exposed `Hippocampus.get_all_content()` public method
-
-### Gate check gap
-- [ ] Cached benchmark path skips `passes_gate()` — near-duplicates and short content stored that production would reject
-- [ ] Once `store_precomputed()` exists, gate runs automatically
-
-### Classification granularity
-- [ ] Cached path classifies full session text; production classifies per-chunk after segmentation
-- [ ] Minor impact (regex-based classifier is coarse), but should be consistent
-
-### User isolation
-- [ ] Enforce user-level isolation at API boundary (not just scope field)
-- [ ] Separate ChromaDB collections per user, or strict where-clause enforcement
-- [ ] Prevent cross-user memory leakage
+- [ ] Silent rejection logging — amygdala gate rejects with reason code
+- [ ] Recall audit trail — which signals (semantic, gist, Hebbian, temporal) contributed to final ranking
+- [ ] Memory metrics as MCP resource (subscribable, not just tool-polled)
 
 ### Data management
-- [x] Export/import memories (JSON) for portability and backup — `myelin export`/`myelin import` CLI commands
-- [ ] Point-in-time backup strategy (ChromaDB snapshot + SQLite backup)
-- [ ] Memory versioning — when a preference updates, keep history (not just overwrite)
-- [x] CLI command: `myelin debug-recall "query"` — show full ranking breakdown for debugging
+- [ ] Export/import round-trip fidelity — verify numeric/timestamp fields (access_count, created_at, tags, parent_id) survive exact serialization
+- [ ] Point-in-time backup (ChromaDB snapshot + SQLite `.backup()`)
+- [ ] Memory versioning — keep history when a preference is overwritten
 
-## P2 — Documentation
+### Benchmark parity (benchmark ↔ production code paths)
+- [ ] `store_precomputed()` public API on Hippocampus — benchmark currently bypasses `passes_gate()` and uses private `_collection.add()` directly
+- [ ] Once `store_precomputed()` exists: gate check and classification granularity gaps close automatically
+- [ ] Multi-agent isolation benchmark — store memories across N agent_ids, measure cross-contamination rate on recall
+- [ ] p50/p95/p99 latency under concurrent load (simultaneous store + recall)
+- [ ] LoCoMo temporal score wired into regression baseline
 
-### README restructure
-- [x] Split 900-line README into focused README (~350 lines) + `docs/architecture.md` (detailed walkthroughs, neuroscience mapping, advanced config, data inspection)
-- [x] Add Upgrading section with patch/minor/major upgrade instructions and embedding model migration strategy
-- [x] Separate Configuration into common (README) and advanced (architecture doc)
-- [x] Add "Further Reading" links section to README
+### Test coverage
+- [ ] `test_amygdala.py` — test rejection *reasons* explicitly (too short, near-duplicate), not just pass/fail outcome
+- [ ] Chunking boundary integration — store long doc, recall by mid-section content
+- [ ] Pin immortality invariant — pinned memory meeting decay criteria must never be pruned
+- [ ] Export/import field fidelity — numeric/timestamp fields survive round-trip
+- [ ] `test_mcp_integration.py` tool list assertion — extend to cover `pin_memory`, `unpin_memory`, `decay_sweep`, `consolidate`, `stats`, `ingest`
 
-## P3 — Performance tuning (after production basics)
+---
 
-### ChromaDB tuning
-- [ ] Tune HNSW parameters: ef_construction (default 100), M (default 16) — benchmark with real data
-- [ ] Consider HNSW ef_search parameter for recall-speed tradeoff
-- [ ] Evaluate IVF-PQ index for 1M+ vector scale
+## P3 — Research / future
 
-### Embedding optimization
-- [ ] Evaluate ONNX runtime for bi-encoder (2-3x faster than PyTorch on CPU)
-- [ ] Evaluate quantized cross-encoder (INT8) for latency reduction
-- [ ] Consider caching chunk embeddings to disk (avoid re-encoding on restart with PersistentClient)
+### Vector index tuning
+- [ ] Tune HNSW ef_construction (default 100) and M (default 16) against real data
+- [ ] Evaluate IVF-PQ for 1M+ vector scale
 
-### Async recall pipeline
-- [ ] Run bi-encoder search + gist search in parallel (both need query embedding, independent after that)
-- [ ] Return fast bi-encoder top-k immediately as "draft" results via MCP streaming
-- [ ] Async refine with cross-encoder only if time budget allows
-- [ ] Run temporal dual-pathway search concurrently with main search
+### Model optimization
+- [ ] ONNX runtime for bi-encoder (2-3× faster on CPU)
+- [ ] INT8 quantized cross-encoder
+- [ ] Shared memory model weights across server restarts (mmap)
