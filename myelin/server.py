@@ -20,7 +20,7 @@ from mcp.server.fastmcp import FastMCP
 
 from .config import MyelinSettings, settings
 from .ingest import IngestResult, ingest_directory, ingest_file
-from .log import request_id, setup_logging
+from .log import request_id, setup_logging, suppress_noisy_loggers
 from .models import MemoryMetadata, RecallResult
 from .recall import HebbianTracker, find_lru, find_stale
 from .reranker import Neocortex
@@ -37,7 +37,7 @@ from .timer import DecayTimer
 async def _lifespan(_: FastMCP) -> AsyncIterator[None]:
     """Start model warm-up and decay timer; clean up on shutdown."""
     loop = asyncio.get_event_loop()
-    loop.run_in_executor(None, warm_up)
+    await loop.run_in_executor(None, warm_up)
     _get_decay_timer().start()
     yield
     _get_decay_timer().stop()
@@ -128,7 +128,9 @@ def _get_decay_timer() -> DecayTimer:
 
 def warm_up() -> None:
     """Pre-warm models by running dummy inference (avoids cold-start lag)."""
+    logger.info("loading models")
     _get_hippocampus().warm_up()
+    logger.info("models ready")
 
 
 def shutdown() -> None:
@@ -1044,11 +1046,15 @@ def health() -> str:
 
 def main() -> None:
     """Run the MCP server (stdio transport)."""
+    suppress_noisy_loggers()
     setup_logging(level=getattr(logging, _cfg.log_level))
     _cfg.ensure_dirs()
+    from . import __version__
+
     logger.info(
         "starting myelin server",
         extra={
+            "version": __version__,
             "data_dir": str(_cfg.data_dir),
             "embedding_model": _cfg.embedding_model,
             "cross_encoder_model": _cfg.cross_encoder_model,
