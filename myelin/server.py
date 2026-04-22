@@ -451,6 +451,115 @@ def do_status() -> dict[str, Any]:
     }
 
 
+def do_stats(project: str = "", agent_id: str = "") -> dict[str, Any]:
+    """Aggregate KPI breakdown of the memory database."""
+    from collections import Counter
+
+    hc = _get_hippocampus()
+    net = _get_neocortex()
+    hebb = _get_hebbian()
+
+    all_meta = hc.get_all_metadata()
+
+    # Optional project / agent filter
+    if project:
+        all_meta = [m for m in all_meta if m.get("project") == project]
+    if agent_id:
+        all_meta = [m for m in all_meta if m.get("agent_id") == agent_id]
+
+    total = len(all_meta)
+    now = datetime.now(tz=UTC)
+
+    # --- counts by dimension ---
+    by_type: Counter[str] = Counter()
+    by_project: Counter[str] = Counter()
+    by_scope: Counter[str] = Counter()
+    by_region: Counter[str] = Counter()
+
+    # --- access health ---
+    cold = hot = lukewarm = 0
+
+    # --- age buckets (days since created_at) ---
+    age_lt7 = age_7_30 = age_30_90 = age_90_365 = age_over365 = 0
+
+    # --- decay candidates ---
+    decay_candidates = 0
+    max_idle = _cfg.max_idle_days
+    min_acc = _cfg.min_access_count
+
+    for m in all_meta:
+        mt = m.get("memory_type") or "unknown"
+        by_type[mt] += 1
+
+        proj = m.get("project") or "(none)"
+        by_project[proj] += 1
+
+        sc = m.get("scope") or "(none)"
+        by_scope[sc] += 1
+
+        region = m.get("ec_region") or "(none)"
+        by_region[region] += 1
+
+        acc = int(m.get("access_count") or 0)
+        if acc == 0:
+            cold += 1
+        elif acc == 1:
+            lukewarm += 1
+        else:
+            hot += 1
+
+        try:
+            created = datetime.fromisoformat(str(m["created_at"]))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            age_days = (now - created).days
+        except (KeyError, ValueError):
+            age_days = 0
+
+        if age_days < 7:
+            age_lt7 += 1
+        elif age_days < 30:
+            age_7_30 += 1
+        elif age_days < 90:
+            age_30_90 += 1
+        elif age_days < 365:
+            age_90_365 += 1
+        else:
+            age_over365 += 1
+
+        try:
+            last = datetime.fromisoformat(str(m["last_accessed"]))
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=UTC)
+            idle_days = (now - last).days
+        except (KeyError, ValueError):
+            idle_days = 0
+        if idle_days >= max_idle and acc < min_acc:
+            decay_candidates += 1
+
+    return {
+        "total": total,
+        "entity_count": net.entity_count(),
+        "relationship_count": net.relationship_count(),
+        "pinned_count": _get_thalamus().pinned_count(),
+        "hebbian": hebb.stats(),
+        "by_type": dict(by_type.most_common()),
+        "by_project": dict(by_project.most_common(10)),
+        "by_scope": dict(by_scope.most_common(10)),
+        "by_region": dict(by_region.most_common()),
+        "access": {"hot": hot, "lukewarm": lukewarm, "cold": cold},
+        "age": {
+            "<7d": age_lt7,
+            "7-30d": age_7_30,
+            "30-90d": age_30_90,
+            "90-365d": age_90_365,
+            ">1yr": age_over365,
+        },
+        "decay_candidates": decay_candidates,
+        "filter": {"project": project or None, "agent_id": agent_id or None},
+    }
+
+
 def do_consolidate() -> dict[str, Any]:
     """Replay episodic memories into the semantic network (CLS)."""
     hc = _get_hippocampus()
@@ -846,6 +955,28 @@ def status() -> str:
     """
     with _track("status"):
         return json.dumps(do_status())
+
+
+@mcp.tool()
+def stats(project: str = "", agent_id: str = "") -> str:
+    """KPI dashboard for the memory database.
+
+    Returns counts by memory type, project, scope, knowledge domain, access
+    health (hot/warm/cold), age distribution, Hebbian link statistics, and
+    a count of decay candidates.  Optionally filter to a specific project or
+    agent namespace.
+
+    Args:
+        project: Restrict results to this project name (empty = all projects).
+        agent_id: Restrict results to this agent namespace (empty = all agents).
+
+    Returns:
+        JSON with total, entity_count, relationship_count, pinned_count,
+        hebbian stats, by_type, by_project, by_scope, by_region, access,
+        age, decay_candidates, and filter.
+    """
+    with _track("stats"):
+        return json.dumps(do_stats(project=project, agent_id=agent_id))
 
 
 @mcp.tool()

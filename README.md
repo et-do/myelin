@@ -475,6 +475,7 @@ STORE (fast, zero-LLM)              RECALL (multi-probe)
 
 ```bash
 myelin status       # Health + integrity check
+myelin stats        # KPI dashboard: counts, types, age, Hebbian links
 myelin serve        # Start MCP server (stdio)
 myelin decay        # Prune stale memories
 myelin consolidate  # Replay episodes into semantic network
@@ -485,6 +486,8 @@ myelin import-md ./exports/ # Import memories from a directory of Markdown files
 myelin ingest ./docs/       # Bulk-load .txt/.md/.json files into memory
 myelin debug-recall "your query"  # Full pipeline breakdown for debugging
 ```
+
+`myelin stats` accepts `--project`, `--agent-id`, and `--json` flags for filtering and machine-readable output.
 
 The `ingest` command bulk-loads content from files or directories:
 
@@ -538,6 +541,7 @@ Output includes:
 | `decay_sweep` | Prune stale memories (access-based TTL) |
 | `consolidate` | Replay episodes into the [semantic network](#consolidation-offline) |
 | `status` | Memory system health check (counts, configuration) |
+| `stats` | KPI dashboard: counts by type/project/scope/region, access health, age distribution, Hebbian links, decay candidates. Accepts `project` and `agent_id` filters. |
 | `health` | Lightweight liveness probe (ok + version, no store initialization) |
 | `ingest` | Bulk-load a file or directory into memory (`.txt`, `.md`, `.json`; supports YAML frontmatter metadata) |
 

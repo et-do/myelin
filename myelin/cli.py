@@ -6,6 +6,7 @@ import argparse
 import json
 import logging
 import sys
+from datetime import UTC
 from typing import Any
 
 from .config import settings
@@ -20,6 +21,299 @@ def cmd_status(_args: argparse.Namespace) -> None:
     configure(settings)
     result = do_status()
     print(json.dumps(result, indent=2))
+
+
+# ANSI colour helpers — no external dependencies
+_RESET = "\033[0m"
+_BOLD = "\033[1m"
+_DIM = "\033[2m"
+_GREEN = "\033[32m"
+_YELLOW = "\033[33m"
+_CYAN = "\033[36m"
+_MAGENTA = "\033[35m"
+_RED = "\033[31m"
+_BLUE = "\033[34m"
+_WHITE = "\033[97m"
+
+_BAR_CHARS = "█▓▒░"
+_BAR_WIDTH = 20
+
+
+def _bar(value: int, total: int, width: int = _BAR_WIDTH) -> str:
+    """Return a filled progress bar string."""
+    if total == 0:
+        return "░" * width
+    filled = round(width * value / total)
+    empty = width - filled
+    return _GREEN + "█" * filled + _DIM + "░" * empty + _RESET
+
+
+def _pct(value: int, total: int) -> str:
+    if total == 0:
+        return "  0.0%"
+    return f"{100 * value / total:5.1f}%"
+
+
+def _header(title: str, width: int = 60) -> None:
+    print()
+    print(_BOLD + _CYAN + "  " + title + _RESET)
+    print(_DIM + "  " + "─" * (width - 2) + _RESET)
+
+
+def _row(label: str, value: int, total: int, label_width: int = 18) -> None:
+    bar = _bar(value, total)
+    pct = _pct(value, total)
+    print(
+        f"  {_WHITE}{label:<{label_width}}{_RESET} "
+        f"{bar} {_YELLOW}{value:>6}{_RESET}  {_DIM}{pct}{_RESET}"
+    )
+
+
+def cmd_stats(args: argparse.Namespace) -> None:
+    import sqlite3
+    from collections import Counter
+    from datetime import datetime
+
+    import chromadb
+
+    # All reads go directly to the underlying stores — no model loading.
+    # Avoids the sentence-transformers cold-start that Hippocampus init triggers
+    # (store/__init__.py eagerly imports Hippocampus → SentenceTransformer).
+    settings.ensure_dirs()
+    data_dir = settings.data_dir
+
+    # ── ChromaDB: memory metadata ─────────────────────────────────────
+    # embedding_function=None prevents ChromaDB loading its default ONNX model.
+    try:
+        chroma = chromadb.PersistentClient(path=str(data_dir / "chroma"))
+        col = chroma.get_collection("memories", embedding_function=None)
+        result = col.get(include=["metadatas"])
+        raw_ids = result["ids"] or []
+        raw_metas = result["metadatas"] or []
+        all_meta = [{"id": id_, **meta} for id_, meta in zip(raw_ids, raw_metas)]
+    except Exception:
+        all_meta = []
+
+    # ── SQLite: neocortex entity/relationship counts ──────────────────
+    neo_path = data_dir / "neocortex.db"
+    entity_count = relationship_count = 0
+    if neo_path.exists():
+        try:
+            with sqlite3.connect(str(neo_path)) as con:
+                row = con.execute(
+                    "SELECT (SELECT COUNT(*) FROM entities), "
+                    "(SELECT COUNT(*) FROM relationships)"
+                ).fetchone()
+                if row:
+                    entity_count, relationship_count = int(row[0]), int(row[1])
+        except sqlite3.OperationalError:
+            pass
+
+    # ── SQLite: Hebbian link stats ────────────────────────────────────
+    hebb_path = data_dir / "hebbian.db"
+    hebbian: dict[str, object] = {"link_count": 0, "avg_weight": 0.0, "max_weight": 0.0}
+    if hebb_path.exists():
+        with sqlite3.connect(str(hebb_path)) as con:
+            row = con.execute(
+                "SELECT COUNT(*), AVG(weight), MAX(weight) FROM co_access"
+            ).fetchone()
+            if row and row[0]:
+                hebbian = {
+                    "link_count": int(row[0]),
+                    "avg_weight": round(float(row[1] or 0), 4),
+                    "max_weight": round(float(row[2] or 0), 4),
+                }
+
+    # ── SQLite: thalamus pinned count ─────────────────────────────────
+    thal_path = data_dir / "thalamus.db"
+    pinned_count = 0
+    if thal_path.exists():
+        with sqlite3.connect(str(thal_path)) as con:
+            row = con.execute("SELECT COUNT(*) FROM pinned").fetchone()
+            if row:
+                pinned_count = int(row[0])
+
+    project = args.project or ""
+    agent_id = args.agent_id or ""
+    if project:
+        all_meta = [m for m in all_meta if m.get("project") == project]
+    if agent_id:
+        all_meta = [m for m in all_meta if m.get("agent_id") == agent_id]
+
+    total = len(all_meta)
+    now = datetime.now(tz=UTC)
+
+    by_type: Counter[str] = Counter()
+    by_project: Counter[str] = Counter()
+    by_scope: Counter[str] = Counter()
+    by_region: Counter[str] = Counter()
+    cold = hot = lukewarm = 0
+    age_lt7 = age_7_30 = age_30_90 = age_90_365 = age_over365 = 0
+    decay_candidates = 0
+
+    for m in all_meta:
+        by_type[m.get("memory_type") or "unknown"] += 1
+        by_project[m.get("project") or "(none)"] += 1
+        by_scope[m.get("scope") or "(none)"] += 1
+        by_region[m.get("ec_region") or "(none)"] += 1
+
+        acc = int(m.get("access_count") or 0)
+        if acc == 0:
+            cold += 1
+        elif acc == 1:
+            lukewarm += 1
+        else:
+            hot += 1
+
+        try:
+            created = datetime.fromisoformat(str(m["created_at"]))
+            if created.tzinfo is None:
+                created = created.replace(tzinfo=UTC)
+            age_days = (now - created).days
+        except (KeyError, ValueError):
+            age_days = 0
+
+        if age_days < 7:
+            age_lt7 += 1
+        elif age_days < 30:
+            age_7_30 += 1
+        elif age_days < 90:
+            age_30_90 += 1
+        elif age_days < 365:
+            age_90_365 += 1
+        else:
+            age_over365 += 1
+
+        try:
+            last = datetime.fromisoformat(str(m["last_accessed"]))
+            if last.tzinfo is None:
+                last = last.replace(tzinfo=UTC)
+            idle_days = (now - last).days
+        except (KeyError, ValueError):
+            idle_days = 0
+        if idle_days >= settings.max_idle_days and acc < settings.min_access_count:
+            decay_candidates += 1
+
+    d = {
+        "total": total,
+        "entity_count": entity_count,
+        "relationship_count": relationship_count,
+        "pinned_count": pinned_count,
+        "hebbian": hebbian,
+        "by_type": dict(by_type.most_common()),
+        "by_project": dict(by_project.most_common(10)),
+        "by_scope": dict(by_scope.most_common(10)),
+        "by_region": dict(by_region.most_common()),
+        "access": {"hot": hot, "lukewarm": lukewarm, "cold": cold},
+        "age": {
+            "<7d": age_lt7,
+            "7-30d": age_7_30,
+            "30-90d": age_30_90,
+            "90-365d": age_90_365,
+            ">1yr": age_over365,
+        },
+        "decay_candidates": decay_candidates,
+        "filter": {"project": project or None, "agent_id": agent_id or None},
+    }
+
+    if args.json:
+        print(json.dumps(d, indent=2))
+        return
+
+    def sep(char: str = "═") -> None:
+        print(_DIM + char * 60 + _RESET)
+
+    print()
+    sep()
+    title = "  MYELIN MEMORY STATS"
+    if d["filter"]["project"]:
+        title += f"  {_DIM}[project={d['filter']['project']}]{_RESET}"
+    if d["filter"]["agent_id"]:
+        title += f"  {_DIM}[agent={d['filter']['agent_id']}]{_RESET}"
+    print(_BOLD + _CYAN + title + _RESET)
+    sep()
+
+    # ── Summary ──────────────────────────────────────────────────────
+    total = d["total"]
+    hebb = d["hebbian"]
+    print()
+    cols = [
+        ("Memories", str(total), _GREEN),
+        ("Entities", str(d["entity_count"]), _CYAN),
+        ("Relationships", str(d["relationship_count"]), _CYAN),
+        ("Pinned", str(d["pinned_count"]), _YELLOW),
+        ("Hebbian links", str(hebb["link_count"]), _MAGENTA),
+    ]
+    for label, val, colour in cols:
+        print(f"  {_DIM}{label:<18}{_RESET}{colour}{_BOLD}{val}{_RESET}")
+
+    if hebb["link_count"] > 0:
+        print(
+            f"  {_DIM}{'Avg link weight':<18}{_RESET}"
+            f"{_DIM}{hebb['avg_weight']:.4f}  max {hebb['max_weight']:.4f}{_RESET}"
+        )
+
+    if total == 0:
+        print()
+        print(f"  {_DIM}No memories found.{_RESET}")
+        print()
+        sep()
+        return
+
+    # ── By Memory Type ───────────────────────────────────────────────
+    _header("Memory Type", 60)
+    for mt, count in d["by_type"].items():
+        _row(mt, count, total)
+
+    # ── By Project ───────────────────────────────────────────────────
+    if not args.project and len(d["by_project"]) > 1:
+        _header("Top Projects", 60)
+        for proj, count in d["by_project"].items():
+            _row(proj, count, total)
+
+    # ── By Scope ─────────────────────────────────────────────────────
+    if len(d["by_scope"]) > 1:
+        _header("Top Scopes", 60)
+        for sc, count in d["by_scope"].items():
+            _row(sc, count, total)
+
+    # ── By Region (entorhinal context) ───────────────────────────────
+    non_none_regions = {k: v for k, v in d["by_region"].items() if k != "(none)"}
+    if non_none_regions:
+        _header("Knowledge Domains", 60)
+        for region, count in d["by_region"].items():
+            _row(region, count, total)
+
+    # ── Access Health ────────────────────────────────────────────────
+    acc = d["access"]
+    _header("Access Health", 60)
+    _row("hot  (≥2 recalls)", acc["hot"], total)
+    _row("warm (1 recall)", acc["lukewarm"], total)
+    _row("cold (never)", acc["cold"], total)
+
+    # ── Age Distribution ─────────────────────────────────────────────
+    age = d["age"]
+    _header("Memory Age", 60)
+    for bucket, count in age.items():
+        _row(bucket, count, total)
+
+    # ── Decay ────────────────────────────────────────────────────────
+    print()
+    cands = d["decay_candidates"]
+    if cands == 0:
+        dc_str = _GREEN + "0 decay candidates" + _RESET
+    else:
+        dc_str = (
+            _RED
+            + _BOLD
+            + str(cands)
+            + _RESET
+            + f" decay candidates  {_DIM}(run `myelin decay` to prune){_RESET}"
+        )
+    print(f"  {dc_str}")
+    print()
+    sep()
+    print()
 
 
 def cmd_decay(_args: argparse.Namespace) -> None:
@@ -334,6 +628,15 @@ def main() -> None:
     sub.add_parser("serve", help="Run MCP server")
     sub.add_parser("consolidate", help="Replay memories into semantic network")
 
+    p_stats = sub.add_parser("stats", help="Show memory KPI dashboard")
+    p_stats.add_argument("--project", default="", help="Filter to a specific project")
+    p_stats.add_argument(
+        "--agent-id", dest="agent_id", default="", help="Filter to an agent namespace"
+    )
+    p_stats.add_argument(
+        "--json", action="store_true", help="Output raw JSON instead of formatted text"
+    )
+
     p_export = sub.add_parser("export", help="Export memories to JSON")
     p_export.add_argument(
         "output", nargs="?", default="-", help="Output file (default: stdout)"
@@ -406,6 +709,7 @@ def main() -> None:
 
     commands: dict[str, Any] = {
         "status": cmd_status,
+        "stats": cmd_stats,
         "decay": cmd_decay,
         "serve": cmd_serve,
         "consolidate": cmd_consolidate,
