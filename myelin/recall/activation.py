@@ -136,6 +136,21 @@ class HebbianTracker:
             result[mid] = round(total, 4)
         return result
 
+    def stats(self) -> dict[str, object]:
+        """Return aggregate statistics about the Hebbian link graph."""
+        with self._lock:
+            row = self.db.execute(
+                "SELECT COUNT(*), AVG(weight), MAX(weight) FROM co_access"
+            ).fetchone()
+        link_count = int(row[0]) if row[0] else 0
+        avg_weight = float(row[1]) if row[1] is not None else 0.0
+        max_weight = float(row[2]) if row[2] is not None else 0.0
+        return {
+            "link_count": link_count,
+            "avg_weight": round(avg_weight, 4),
+            "max_weight": round(max_weight, 4),
+        }
+
     def cleanup(self, valid_ids: set[str]) -> int:
         """Remove co-access entries referencing deleted memories."""
         with self._lock:
