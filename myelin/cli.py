@@ -343,6 +343,70 @@ def cmd_consolidate(_args: argparse.Namespace) -> None:
     print(json.dumps(result, indent=2))
 
 
+def cmd_graph(args: argparse.Namespace) -> None:
+    """Serve an interactive D3 graph of the semantic entity network."""
+    import http.server
+    import importlib.resources
+    import socket
+    import threading
+    import webbrowser
+
+    from .store.neocortex import SemanticNetwork
+
+    net = SemanticNetwork()
+    graph_data = net.get_graph(min_weight=args.min_weight, limit_nodes=args.limit)
+    graph_json = json.dumps(graph_data)
+
+    # Load the HTML template and inject graph data
+    try:
+        # Python 3.9+ importlib.resources API
+        ref = importlib.resources.files("myelin").joinpath("graph.html")
+        html_template = ref.read_text(encoding="utf-8")
+    except Exception:
+        import os
+
+        html_template = open(
+            os.path.join(os.path.dirname(__file__), "graph.html"), encoding="utf-8"
+        ).read()
+
+    html = html_template.replace(
+        '/*GRAPH_DATA*/{"nodes":[],"edges":[]}', f"/*GRAPH_DATA*/{graph_json}"
+    )
+
+    # Find a free port
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", args.port))
+        port = s.getsockname()[1]
+
+    class _Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            body = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, fmt: str, *a: object) -> None:  # noqa: ANN002
+            pass  # silence request logs
+
+    server = http.server.HTTPServer(("127.0.0.1", port), _Handler)
+    url = f"http://127.0.0.1:{port}"
+
+    n_nodes = len(graph_data["nodes"])
+    n_edges = len(graph_data["edges"])
+    print(f"Graph: {n_nodes} nodes, {n_edges} edges")
+    print(f"Serving at {url}  (Ctrl-C to stop)")
+
+    if not args.no_open:
+        threading.Timer(0.3, lambda: webbrowser.open(url)).start()
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopped.")
+
+
 def cmd_debug_recall(args: argparse.Namespace) -> None:
     from .server import configure, do_debug_recall
 
@@ -689,6 +753,35 @@ def main() -> None:
     sub.add_parser("serve", help="Run MCP server")
     sub.add_parser("consolidate", help="Replay memories into semantic network")
 
+    p_graph = sub.add_parser(
+        "graph", help="Serve interactive entity graph in the browser"
+    )
+    p_graph.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help="Port to serve on (default: random free port)",
+    )
+    p_graph.add_argument(
+        "--min-weight",
+        dest="min_weight",
+        type=float,
+        default=0.0,
+        help="Minimum edge weight to include (default: 0 = all)",
+    )
+    p_graph.add_argument(
+        "--limit",
+        type=int,
+        default=300,
+        help="Max nodes to display, ordered by degree (default: 300)",
+    )
+    p_graph.add_argument(
+        "--no-open",
+        dest="no_open",
+        action="store_true",
+        help="Do not open browser automatically",
+    )
+
     p_stats = sub.add_parser("stats", help="Show memory KPI dashboard")
     p_stats.add_argument("--project", default="", help="Filter to a specific project")
     p_stats.add_argument(
@@ -799,6 +892,7 @@ def main() -> None:
         "decay": cmd_decay,
         "serve": cmd_serve,
         "consolidate": cmd_consolidate,
+        "graph": cmd_graph,
         "export": cmd_export,
         "import": cmd_import,
         "export-md": cmd_export_md,

@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Myelin — Memory Graph</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: #0f1117;
+    color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    font-size: 13px;
+    overflow: hidden;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Toolbar ───────────────────────────────────────────── */
+  #toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 16px;
+    background: #1a1d27;
+    border-bottom: 1px solid #2d3148;
+    flex-shrink: 0;
+    flex-wrap: wrap;
+  }
+
+  #toolbar h1 {
+    font-size: 15px;
+    font-weight: 600;
+    color: #a78bfa;
+    letter-spacing: 0.02em;
+    margin-right: 4px;
+  }
+
+  #toolbar label {
+    color: #94a3b8;
+    font-size: 12px;
+  }
+
+  #toolbar input[type=range] {
+    width: 90px;
+    accent-color: #7c3aed;
+    cursor: pointer;
+  }
+
+  #toolbar input[type=text] {
+    background: #0f1117;
+    border: 1px solid #2d3148;
+    border-radius: 6px;
+    color: #e2e8f0;
+    padding: 4px 8px;
+    font-size: 12px;
+    width: 140px;
+    outline: none;
+  }
+  #toolbar input[type=text]:focus { border-color: #7c3aed; }
+
+  #stats {
+    margin-left: auto;
+    color: #64748b;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  /* ── Canvas ────────────────────────────────────────────── */
+  #canvas { flex: 1; position: relative; overflow: hidden; }
+
+  svg { width: 100%; height: 100%; }
+
+  .link {
+    stroke: #334155;
+    stroke-opacity: 0.6;
+    stroke-linecap: round;
+  }
+
+  .node circle {
+    stroke-width: 1.5;
+    cursor: pointer;
+    transition: r 0.15s;
+  }
+  .node circle:hover { stroke-width: 2.5; }
+
+  .node text {
+    fill: #cbd5e1;
+    font-size: 10px;
+    pointer-events: none;
+    text-shadow: 0 1px 3px #0f1117;
+  }
+
+  /* ── Tooltip ───────────────────────────────────────────── */
+  #tooltip {
+    position: fixed;
+    background: #1e2235;
+    border: 1px solid #3b4268;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.12s;
+    z-index: 100;
+    max-width: 260px;
+    line-height: 1.6;
+  }
+  #tooltip .tt-name { font-weight: 600; color: #a78bfa; margin-bottom: 4px; }
+  #tooltip .tt-row  { color: #94a3b8; }
+  #tooltip .tt-row span { color: #e2e8f0; }
+
+  /* ── Sidebar ───────────────────────────────────────────── */
+  #sidebar {
+    position: fixed;
+    right: 0; top: 41px; bottom: 0;
+    width: 260px;
+    background: #1a1d27;
+    border-left: 1px solid #2d3148;
+    padding: 14px;
+    overflow-y: auto;
+    display: none;
+    z-index: 50;
+  }
+  #sidebar.open { display: block; }
+  #sidebar h2 { font-size: 13px; color: #a78bfa; margin-bottom: 10px; font-weight: 600; }
+  #sidebar .rel-chip {
+    display: inline-block;
+    background: #1e2235;
+    border: 1px solid #3b4268;
+    border-radius: 12px;
+    padding: 2px 8px;
+    margin: 2px;
+    font-size: 11px;
+    color: #94a3b8;
+    cursor: pointer;
+  }
+  #sidebar .rel-chip:hover { border-color: #7c3aed; color: #e2e8f0; }
+  #sidebar .close-btn {
+    float: right;
+    cursor: pointer;
+    color: #64748b;
+    font-size: 16px;
+    line-height: 1;
+  }
+  #sidebar .close-btn:hover { color: #e2e8f0; }
+
+  /* ── Empty state ───────────────────────────────────────── */
+  #empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: #475569;
+    gap: 8px;
+    display: none;
+  }
+  #empty h2 { font-size: 18px; color: #64748b; }
+  #empty p  { font-size: 13px; max-width: 340px; text-align: center; line-height: 1.6; }
+  #empty code {
+    background: #1a1d27;
+    border: 1px solid #2d3148;
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: #a78bfa;
+  }
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <h1>⬡ myelin graph</h1>
+  <label>min weight <input type="range" id="minWeight" min="0" max="5" step="0.5" value="0"></label>
+  <span id="minWeightVal" style="color:#7c3aed;font-weight:600;min-width:24px">0</span>
+  <label>search <input type="text" id="search" placeholder="filter nodes…"></label>
+  <span id="stats"></span>
+</div>
+
+<div id="canvas">
+  <svg id="svg">
+    <defs>
+      <radialGradient id="gBg" cx="50%" cy="50%" r="50%">
+        <stop offset="0%"   stop-color="#1a1d27" stop-opacity="0.4"/>
+        <stop offset="100%" stop-color="#0f1117" stop-opacity="0"/>
+      </radialGradient>
+    </defs>
+    <g id="links-layer"></g>
+    <g id="nodes-layer"></g>
+  </svg>
+  <div id="empty">
+    <h2>No entity graph yet</h2>
+    <p>Run <code>myelin consolidate</code> to build the semantic network from your stored memories, then refresh this page.</p>
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<div id="sidebar">
+  <button class="close-btn" onclick="closeSidebar()">✕</button>
+  <h2 id="sb-title">Connections</h2>
+  <div id="sb-body"></div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+// ── Data injected by server ─────────────────────────────────────────────────
+const RAW_DATA = /*GRAPH_DATA*/{"nodes":[],"edges":[]};
+
+// ── Colour palette by entity_type ──────────────────────────────────────────
+const TYPE_COLOURS = {
+  concept:   "#7c3aed",
+  person:    "#0ea5e9",
+  project:   "#10b981",
+  tech:      "#f59e0b",
+  org:       "#ec4899",
+};
+function nodeColour(d) { return TYPE_COLOURS[d.entity_type] || TYPE_COLOURS.concept; }
+
+// ── State ───────────────────────────────────────────────────────────────────
+let minWeight = 0;
+let searchTerm = "";
+let simulation, linkSel, nodeSel;
+const svg = d3.select("#svg");
+const linksLayer = svg.select("#links-layer");
+const nodesLayer = svg.select("#nodes-layer");
+
+// ── Build adjacency map for sidebar ─────────────────────────────────────────
+function buildAdjacency(edges) {
+  const adj = {};
+  edges.forEach(e => {
+    if (!adj[e.source.id || e.source]) adj[e.source.id || e.source] = [];
+    if (!adj[e.target.id || e.target]) adj[e.target.id || e.target] = [];
+    adj[e.source.id || e.source].push({ name: e.target.id || e.target, weight: e.weight });
+    adj[e.target.id || e.target].push({ name: e.source.id || e.source, weight: e.weight });
+  });
+  return adj;
+}
+
+// ── Derive filtered graph ─────────────────────────────────────────────────
+function filteredGraph() {
+  let edges = RAW_DATA.edges.filter(e => e.weight >= minWeight);
+  let nodeIds = new Set();
+  edges.forEach(e => { nodeIds.add(e.source); nodeIds.add(e.target); });
+
+  let nodes = RAW_DATA.nodes.filter(n => nodeIds.has(n.id));
+
+  if (searchTerm) {
+    const q = searchTerm.toLowerCase();
+    const matched = new Set(nodes.filter(n => n.id.includes(q)).map(n => n.id));
+    // include 1-hop neighbours of matched nodes
+    edges.forEach(e => {
+      if (matched.has(e.source)) matched.add(e.target);
+      if (matched.has(e.target)) matched.add(e.source);
+    });
+    nodes = nodes.filter(n => matched.has(n.id));
+    const matchedSet = new Set(nodes.map(n => n.id));
+    edges = edges.filter(e => matchedSet.has(e.source) && matchedSet.has(e.target));
+  }
+
+  return { nodes, edges };
+}
+
+// ── Radius scale ─────────────────────────────────────────────────────────
+const rScale = d3.scaleSqrt().domain([1, 50]).range([4, 18]).clamp(true);
+
+// ── Main render ────────────────────────────────────────────────────────────
+function render() {
+  const { nodes, edges } = filteredGraph();
+  const W = window.innerWidth, H = window.innerHeight - 41;
+
+  document.getElementById("stats").textContent =
+    `${nodes.length} nodes · ${edges.length} edges`;
+
+  document.getElementById("empty").style.display =
+    (RAW_DATA.nodes.length === 0) ? "flex" : "none";
+
+  // Deep-clone so D3 can mutate freely
+  const ns = nodes.map(d => ({ ...d }));
+  const es = edges.map(d => ({ ...d }));
+
+  if (simulation) simulation.stop();
+
+  simulation = d3.forceSimulation(ns)
+    .force("link", d3.forceLink(es).id(d => d.id).distance(d => 60 / Math.sqrt(d.weight || 1)).strength(0.7))
+    .force("charge", d3.forceManyBody().strength(-160).distanceMax(300))
+    .force("center", d3.forceCenter(W / 2, H / 2))
+    .force("collision", d3.forceCollide(d => rScale(d.degree) + 3))
+    .alphaDecay(0.025);
+
+  // Links
+  linksLayer.selectAll("*").remove();
+  linkSel = linksLayer.selectAll("line").data(es).join("line")
+    .attr("class", "link")
+    .attr("stroke-width", d => Math.min(4, 0.8 + Math.log1p(d.weight)));
+
+  // Nodes
+  nodesLayer.selectAll("*").remove();
+  nodeSel = nodesLayer.selectAll("g").data(ns).join("g")
+    .attr("class", "node")
+    .call(drag(simulation))
+    .on("click", (event, d) => openSidebar(d, buildAdjacency(es)))
+    .on("mouseover", showTooltip)
+    .on("mousemove", moveTooltip)
+    .on("mouseout", hideTooltip);
+
+  nodeSel.append("circle")
+    .attr("r", d => rScale(d.degree))
+    .attr("fill", d => nodeColour(d) + "33")
+    .attr("stroke", nodeColour);
+
+  nodeSel.append("text")
+    .attr("dy", d => rScale(d.degree) + 10)
+    .attr("text-anchor", "middle")
+    .text(d => d.id.length > 20 ? d.id.slice(0, 18) + "…" : d.id);
+
+  simulation.on("tick", () => {
+    linkSel
+      .attr("x1", d => d.source.x).attr("y1", d => d.source.y)
+      .attr("x2", d => d.target.x).attr("y2", d => d.target.y);
+    nodeSel.attr("transform", d => `translate(${d.x},${d.y})`);
+  });
+}
+
+// ── Drag ───────────────────────────────────────────────────────────────────
+function drag(sim) {
+  return d3.drag()
+    .on("start", (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx = d.x; d.fy = d.y; })
+    .on("drag",  (e, d) => { d.fx = e.x; d.fy = e.y; })
+    .on("end",   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx = null; d.fy = null; });
+}
+
+// ── Zoom & pan ─────────────────────────────────────────────────────────────
+const zoom = d3.zoom().scaleExtent([0.1, 8]).on("zoom", e => {
+  linksLayer.attr("transform", e.transform);
+  nodesLayer.attr("transform", e.transform);
+});
+svg.call(zoom);
+
+// ── Tooltip ────────────────────────────────────────────────────────────────
+const tip = document.getElementById("tooltip");
+function showTooltip(event, d) {
+  tip.innerHTML = `
+    <div class="tt-name">${d.id}</div>
+    <div class="tt-row">type <span>${d.entity_type}</span></div>
+    <div class="tt-row">degree <span>${d.degree}</span></div>`;
+  tip.style.opacity = 1;
+  moveTooltip(event);
+}
+function moveTooltip(event) {
+  const x = event.clientX + 14, y = event.clientY - 10;
+  tip.style.left = Math.min(x, window.innerWidth - 280) + "px";
+  tip.style.top  = y + "px";
+}
+function hideTooltip() { tip.style.opacity = 0; }
+
+// ── Sidebar ────────────────────────────────────────────────────────────────
+function openSidebar(d, adj) {
+  document.getElementById("sb-title").textContent = d.id;
+  const neighbours = (adj[d.id] || []).sort((a, b) => b.weight - a.weight);
+  document.getElementById("sb-body").innerHTML = neighbours.length
+    ? neighbours.map(n =>
+        `<span class="rel-chip" onclick="focusNode('${n.name}')">${n.name} <em style="color:#7c3aed">${n.weight.toFixed(1)}</em></span>`
+      ).join("")
+    : "<p style='color:#475569'>No connections at current filter.</p>";
+  document.getElementById("sidebar").classList.add("open");
+}
+function closeSidebar() {
+  document.getElementById("sidebar").classList.remove("open");
+}
+function focusNode(name) {
+  document.getElementById("search").value = name;
+  searchTerm = name;
+  render();
+}
+
+// ── Controls ────────────────────────────────────────────────────────────────
+document.getElementById("minWeight").addEventListener("input", function() {
+  minWeight = +this.value;
+  document.getElementById("minWeightVal").textContent = this.value;
+  render();
+});
+document.getElementById("search").addEventListener("input", function() {
+  searchTerm = this.value.toLowerCase().trim();
+  render();
+});
+window.addEventListener("resize", render);
+
+// ── Init ───────────────────────────────────────────────────────────────────
+render();
+</script>
+</body>
+</html>

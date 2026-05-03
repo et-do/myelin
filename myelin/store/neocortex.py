@@ -307,6 +307,78 @@ class SemanticNetwork:
     # Cleanup
     # ------------------------------------------------------------------
 
+    def get_graph(
+        self,
+        min_weight: float = 0.0,
+        limit_nodes: int = 300,
+    ) -> dict[str, Any]:
+        """Return the full entity graph as a JSON-serialisable dict.
+
+        Parameters
+        ----------
+        min_weight:
+            Only include edges with ``weight >= min_weight``.
+        limit_nodes:
+            Cap on nodes returned, ordered by degree (most-connected first).
+
+        Returns
+        -------
+        dict with keys:
+            ``nodes`` — list of ``{id, entity_type, degree}``
+            ``edges`` — list of ``{source, target, weight}``
+        """
+        with self._lock:
+            # All edges above threshold
+            rows = self.db.execute(
+                """SELECT subject, object, weight
+                   FROM relationships
+                   WHERE weight >= ?
+                   ORDER BY weight DESC""",
+                [min_weight],
+            ).fetchall()
+
+        edges = [{"source": r[0], "target": r[1], "weight": r[2]} for r in rows]
+
+        # Count degree for each node appearing in edges
+        degree: dict[str, int] = {}
+        for e in edges:
+            degree[e["source"]] = degree.get(e["source"], 0) + 1
+            degree[e["target"]] = degree.get(e["target"], 0) + 1
+
+        # Top nodes by degree
+        top_nodes = sorted(degree.keys(), key=lambda n: degree[n], reverse=True)[
+            :limit_nodes
+        ]
+        top_set = set(top_nodes)
+
+        # Fetch entity metadata for the selected nodes
+        with self._lock:
+            placeholders = ",".join("?" * len(top_nodes)) if top_nodes else "NULL"
+            if top_nodes:
+                meta_rows = self.db.execute(
+                    f"SELECT name, entity_type FROM entities WHERE name IN ({placeholders})",  # noqa: S608
+                    top_nodes,
+                ).fetchall()
+            else:
+                meta_rows = []
+
+        entity_type_map = {r[0]: r[1] for r in meta_rows}
+        nodes = [
+            {
+                "id": n,
+                "entity_type": entity_type_map.get(n, "concept"),
+                "degree": degree[n],
+            }
+            for n in top_nodes
+        ]
+
+        # Filter edges to only those between selected nodes
+        filtered_edges = [
+            e for e in edges if e["source"] in top_set and e["target"] in top_set
+        ]
+
+        return {"nodes": nodes, "edges": filtered_edges}
+
     def clear(self) -> None:
         """Remove all entities and relationships."""
         with self._lock:
