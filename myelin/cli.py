@@ -598,6 +598,67 @@ def cmd_import(args: argparse.Namespace) -> None:
     print(f"Imported {stored} memories ({skipped} skipped).")
 
 
+def cmd_obsidian_export(args: argparse.Namespace) -> None:
+    """Export memories to an Obsidian vault."""
+    from pathlib import Path
+
+    from .integrations.obsidian import ObsidianExporter
+    from .store import Hippocampus
+
+    hc = Hippocampus()
+    memories = hc.get_all_content()
+    metadata = hc.get_all_metadata()
+    meta_by_id = {m["id"]: m for m in metadata}
+
+    merged = [
+        {**meta_by_id.get(m["id"], {}), "content": m["content"]} for m in memories
+    ]
+
+    if args.project:
+        merged = [m for m in merged if m.get("project") == args.project]
+    if args.memory_type:
+        merged = [m for m in merged if m.get("memory_type") == args.memory_type]
+    if args.scope:
+        merged = [m for m in merged if m.get("scope") == args.scope]
+
+    vault = Path(args.vault)
+    exporter = ObsidianExporter()
+    count = exporter.export(merged, vault)
+    print(f"Exported {count} memories to {vault}/")
+
+
+def cmd_obsidian_import(args: argparse.Namespace) -> None:
+    """Import memories from an Obsidian vault."""
+    from pathlib import Path
+
+    from .integrations.obsidian import ObsidianImporter
+    from .server import configure, do_store
+
+    configure(settings)
+
+    vault = Path(args.vault)
+    importer = ObsidianImporter()
+    pairs = importer.import_(vault, default_source=args.source)
+
+    stored = skipped = 0
+    for content, meta in pairs:
+        result = do_store(
+            content,
+            project=meta.get("project", ""),
+            scope=meta.get("scope", ""),
+            memory_type=meta.get("memory_type", ""),
+            language=meta.get("language", ""),
+            tags=meta.get("tags", ""),
+            source=meta.get("source", args.source),
+        )
+        if result.get("status") in {"stored", "updated"}:
+            stored += 1
+        else:
+            skipped += 1
+
+    print(f"Imported {stored} memories ({skipped} skipped) from {vault}/")
+
+
 def cmd_ingest(args: argparse.Namespace) -> None:
     from .server import configure, do_ingest
 
@@ -700,6 +761,31 @@ def main() -> None:
         "--json", action="store_true", help="Output raw JSON instead of formatted text"
     )
 
+    p_obs_export = sub.add_parser(
+        "obsidian-export",
+        help="Export memories to an Obsidian vault directory",
+    )
+    p_obs_export.add_argument("vault", help="Path to the Obsidian vault root")
+    p_obs_export.add_argument("--project", default="", help="Filter by project")
+    p_obs_export.add_argument(
+        "--type",
+        dest="memory_type",
+        default="",
+        help="Filter by memory_type (episodic, semantic, procedural, prospective)",
+    )
+    p_obs_export.add_argument("--scope", default="", help="Filter by scope")
+
+    p_obs_import = sub.add_parser(
+        "obsidian-import",
+        help="Import memories from an Obsidian vault directory",
+    )
+    p_obs_import.add_argument("vault", help="Path to the Obsidian vault root")
+    p_obs_import.add_argument(
+        "--source",
+        default="obsidian-import",
+        help="Source label for imported memories (default: obsidian-import)",
+    )
+
     args = parser.parse_args()
     if args.command is None:
         parser.print_help()
@@ -717,6 +803,8 @@ def main() -> None:
         "import": cmd_import,
         "export-md": cmd_export_md,
         "import-md": cmd_import_md,
+        "obsidian-export": cmd_obsidian_export,
+        "obsidian-import": cmd_obsidian_import,
         "ingest": cmd_ingest,
         "debug-recall": cmd_debug_recall,
     }
