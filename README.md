@@ -483,6 +483,8 @@ myelin export out.json      # Export all memories to JSON
 myelin import out.json      # Import memories from JSON
 myelin export-md ./exports/ # Export memories as Markdown files with YAML frontmatter
 myelin import-md ./exports/ # Import memories from a directory of Markdown files
+myelin obsidian-export ~/vaults/work  # Export to an Obsidian vault (graph view)
+myelin obsidian-import ~/vaults/work  # Import from an Obsidian vault
 myelin ingest ./docs/       # Bulk-load .txt/.md/.json files into memory
 myelin debug-recall "your query"  # Full pipeline breakdown for debugging
 ```
@@ -509,6 +511,33 @@ myelin export-md ./memory-backup/
 # edit files...
 myelin import-md ./memory-backup/
 myelin import-md ./memory-backup/ --source restored
+```
+
+The `obsidian-export` command exports memories into an [Obsidian](https://obsidian.md) vault for graph-view visualisation. Each memory becomes a note with YAML frontmatter and `[[entity]]` wikilinks — Obsidian's graph view then clusters memories by shared entities, projects, and scopes:
+
+```bash
+myelin obsidian-export ~/vaults/work           # export all memories
+myelin obsidian-export ~/vaults/work --type semantic   # decisions only
+myelin obsidian-export ~/vaults/work --project myapp   # one project
+```
+
+The resulting vault structure:
+
+```
+vault/
+├── Memory Index.md
+└── Memories/
+    ├── semantic/   ← decisions, facts
+    ├── episodic/   ← events, bug fixes
+    ├── procedural/ ← preferences, how-tos
+    └── prospective/← plans, advice
+```
+
+To bring hand-edited or new notes back into myelin:
+
+```bash
+myelin obsidian-import ~/vaults/work
+myelin obsidian-import ~/vaults/work --source obsidian
 ```
 
 The `debug-recall` command runs a recall query and shows exactly what happened at each stage of the pipeline:
