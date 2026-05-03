@@ -1,0 +1,40 @@
+{
+  "n": 12,
+  "overall": {
+    "R@1": 0.9167,
+    "R@3": 0.9167,
+    "R@5": 0.9167
+  },
+  "by_type": {
+    "knowledge-update": {
+      "R@1": 1.0,
+      "R@3": 1.0,
+      "R@5": 1.0
+    },
+    "multi-session": {
+      "R@1": 1.0,
+      "R@3": 1.0,
+      "R@5": 1.0
+    },
+    "single-session-assistant": {
+      "R@1": 1.0,
+      "R@3": 1.0,
+      "R@5": 1.0
+    },
+    "single-session-preference": {
+      "R@1": 1.0,
+      "R@3": 1.0,
+      "R@5": 1.0
+    },
+    "single-session-user": {
+      "R@1": 1.0,
+      "R@3": 1.0,
+      "R@5": 1.0
+    },
+    "temporal-reasoning": {
+      "R@1": 0.5,
+      "R@3": 0.5,
+      "R@5": 0.5
+    }
+  }
+}

@@ -419,8 +419,18 @@ def main() -> None:
 
     b_lme_scores = json.loads((_BASELINE_DIR / "lme_scores.json").read_text())
     b_locomo_scores = json.loads((_BASELINE_DIR / "locomo_scores.json").read_text())
-    b_lme_results = json.loads((_BASELINE_DIR / "lme_results.json").read_text())
-    b_locomo_results = json.loads((_BASELINE_DIR / "locomo_results.json").read_text())
+    b_lme_results_path = _BASELINE_DIR / "lme_results.json"
+    b_locomo_results_path = _BASELINE_DIR / "locomo_results.json"
+    b_lme_results = (
+        json.loads(b_lme_results_path.read_text())
+        if b_lme_results_path.exists()
+        else []
+    )
+    b_locomo_results = (
+        json.loads(b_locomo_results_path.read_text())
+        if b_locomo_results_path.exists()
+        else []
+    )
 
     print(f"\n{'─' * 60}", flush=True)
     print("  Regression Report", flush=True)
