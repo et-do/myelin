@@ -8,7 +8,7 @@
   <p>
     <a href="#quick-start">Quick Start</a> ·
     <a href="#how-it-works">How It Works</a> ·
-    <a href="#results">Benchmarks</a> ·
+    <a href="#bencmark-results">Benchmarks</a> ·
     <a href="#cli--mcp-tools">CLI & Tools</a> ·
     <a href="CONTRIBUTING.md">Contributing</a>
   </p>
@@ -41,7 +41,7 @@
 - [Quick Start](#quick-start)
 - [Setup Guides](#setup-guides)
 - [Teaching Your Agent](#teaching-your-agent)
-- [Results](#results)
+- [Benchmarks](#benchmark-results)
 - [How It Works](#how-it-works)
 - [CLI & MCP Tools](#cli--mcp-tools)
 - [Configuration](#configuration)
@@ -340,7 +340,7 @@ You have access to a long-term memory system (Myelin) via MCP tools.
 
 ---
 
-## Results
+## Benchmark Results
 
 ### LongMemEval_S — 500 questions, zero LLM calls
 

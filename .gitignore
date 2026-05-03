@@ -192,3 +192,4 @@ benchmarks/perf/
 # Test artifact protection
 # ChromaDB data leaking out of tmp dirs during bad mocks
 chroma.sqlite3
+/benchmarks/locomo/output
