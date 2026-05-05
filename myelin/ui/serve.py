@@ -15,7 +15,6 @@ import threading
 import webbrowser
 from typing import Any
 
-
 # ---------------------------------------------------------------------------
 # Data helpers
 # ---------------------------------------------------------------------------
@@ -172,8 +171,8 @@ def _load_template() -> str:
 
 def serve_graph(args: argparse.Namespace) -> None:
     """Build the app payload and start the local HTTP server."""
-    from ..store.neocortex import SemanticNetwork
     from ..config import settings
+    from ..store.neocortex import SemanticNetwork
 
     net = SemanticNetwork()
     graph_data = net.get_graph(min_weight=args.min_weight, limit_nodes=args.limit)
@@ -197,7 +196,7 @@ def serve_graph(args: argparse.Namespace) -> None:
         port = s.getsockname()[1]
 
     class _Handler(http.server.BaseHTTPRequestHandler):
-        def do_GET(self) -> None:  # noqa: N802
+        def do_GET(self) -> None:
             body = html.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -205,7 +204,7 @@ def serve_graph(args: argparse.Namespace) -> None:
             self.end_headers()
             self.wfile.write(body)
 
-        def log_message(self, fmt: str, *a: object) -> None:  # noqa: ANN002
+        def log_message(self, fmt: str, *a: object) -> None:
             pass
 
     server = http.server.HTTPServer(("127.0.0.1", port), _Handler)

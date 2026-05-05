@@ -1,4 +1,7 @@
-"""Tests for storage cap (LRU eviction) and auto-decay timer (myelin.mcp + myelin.background)."""
+"""Storage cap (LRU eviction) and auto-decay timer tests.
+
+Covers: LRU eviction, storage cap, DecayTimer (myelin.background).
+"""
 
 from __future__ import annotations
 
@@ -7,10 +10,9 @@ import time
 
 import pytest
 
+from myelin.background import DecayTimer
 from myelin.config import MyelinSettings
 from myelin.mcp import configure, do_status, do_store
-from myelin.background import DecayTimer
-
 
 # ---------------------------------------------------------------------------
 # Storage cap — integration tests via do_store()

@@ -31,8 +31,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from .base import Exporter, Importer
 from ..store.consolidation import extract_entities
+from .base import Exporter, Importer
 
 # ---------------------------------------------------------------------------
 # Helpers

@@ -18,8 +18,8 @@ from uuid import uuid4
 
 from mcp.server.fastmcp import FastMCP
 
-from .config import MyelinSettings, settings
 from .background import DecayTimer
+from .config import MyelinSettings, settings
 from .integrations.ingest import IngestResult, ingest_directory, ingest_file
 from .log import request_id, setup_logging, suppress_noisy_loggers
 from .models import MemoryMetadata, RecallResult

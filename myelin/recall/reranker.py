@@ -81,4 +81,4 @@ class Neocortex:
         return [float(s) for s in scores]
 
 
-__all__ = ["Neocortex", "DEFAULT_CROSS_ENCODER"]
+__all__ = ["DEFAULT_CROSS_ENCODER", "Neocortex"]

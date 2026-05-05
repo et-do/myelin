@@ -496,7 +496,7 @@ def cmd_export_md(args: argparse.Namespace) -> None:
     # Incremental: build set of IDs that need (re)writing
     skip_ids: set[str] = set()
     if args.incremental:
-        from .integrations.sync import SyncRegistry, _hash_memory
+        from .integrations.sync import SyncRegistry
 
         registry = SyncRegistry(settings.data_dir / "sync.db")
         merged_for_filter = [
@@ -752,7 +752,8 @@ def cmd_obsidian_import(args: argparse.Namespace) -> None:
     if registry is not None:
         registry.record_imports("obsidian", vault, new_files)
         print(
-            f"Imported {stored} memories ({skipped} skipped) from {vault}/ ({unchanged} files unchanged)"
+            f"Imported {stored} memories ({skipped} skipped) from {vault}/"
+            f" ({unchanged} files unchanged)"
         )
     else:
         print(f"Imported {stored} memories ({skipped} skipped) from {vault}/")
@@ -954,7 +955,7 @@ def main() -> None:
         "--include",
         default="commits",
         metavar="TYPES",
-        help="Comma-separated list of item types: commits,prs,issues (default: commits)",
+        help="Comma-separated list of item types: commits,prs,issues (default: commits)",  # noqa: E501
     )
     p_gh_import.add_argument(
         "--project", default="", help="Project label for imported memories"

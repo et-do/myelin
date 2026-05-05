@@ -60,7 +60,8 @@ def _run(cmd: list[str], **kwargs: Any) -> str:
     )
     if result.returncode != 0:
         raise RuntimeError(
-            f"Command {cmd[0]!r} failed (exit {result.returncode}): {result.stderr.strip()}"
+            f"Command {cmd[0]!r} failed"
+            f" (exit {result.returncode}): {result.stderr.strip()}"
         )
     return result.stdout
 
@@ -83,7 +84,7 @@ def _files_changed(repo: Path, sha: str) -> list[str]:
             sha,
         ]
     )
-    return [l for l in out.splitlines() if l]
+    return [line for line in out.splitlines() if line]
 
 
 # ---------------------------------------------------------------------------
@@ -402,7 +403,7 @@ class GitHubImporter(Importer):
     # ---------------------------------------------------------------- helpers
 
     def _detect_repo_name(self, repo: Path) -> str:
-        """Try to infer ``owner/name`` from the git remote URL, falling back to dir name."""
+        """Infer ``owner/name`` from the git remote URL, falling back to dir name."""
         try:
             remote_url = _run(
                 ["git", "-C", str(repo), "remote", "get-url", "origin"]

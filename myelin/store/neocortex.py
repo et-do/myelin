@@ -356,7 +356,8 @@ class SemanticNetwork:
             placeholders = ",".join("?" * len(top_nodes)) if top_nodes else "NULL"
             if top_nodes:
                 meta_rows = self.db.execute(
-                    f"SELECT name, entity_type FROM entities WHERE name IN ({placeholders})",  # noqa: S608
+                    f"SELECT name, entity_type FROM entities"
+                    f" WHERE name IN ({placeholders})",
                     top_nodes,
                 ).fetchall()
             else:

@@ -13,7 +13,6 @@ import pytest
 from myelin.config import MyelinSettings
 from myelin.store.neocortex import SemanticNetwork
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -119,7 +118,7 @@ class TestCmdGraph:
         import myelin.cli as cli_mod
 
         # Patch SemanticNetwork so cmd_graph uses our fixture net
-        original = cli_mod.__dict__.get("_get_net")
+        cli_mod.__dict__.get("_get_net")
 
         import socket
 

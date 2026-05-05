@@ -19,17 +19,17 @@ from .obsidian import ObsidianExporter, ObsidianImporter
 from .sync import SyncRegistry
 
 __all__ = [
+    "EXPORTERS",
+    "IMPORTERS",
     "Exporter",
-    "Importer",
     "GitHubImporter",
+    "Importer",
     "IngestResult",
     "ObsidianExporter",
     "ObsidianImporter",
     "SyncRegistry",
     "ingest_directory",
     "ingest_file",
-    "EXPORTERS",
-    "IMPORTERS",
 ]
 
 #: Registry of available exporters keyed by integration name.

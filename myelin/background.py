@@ -258,4 +258,4 @@ def _now() -> datetime:
     return datetime.now(UTC)
 
 
-__all__ = ["DecayTimer", "BackgroundWorker"]
+__all__ = ["BackgroundWorker", "DecayTimer"]

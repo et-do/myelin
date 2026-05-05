@@ -23,13 +23,13 @@ from ..config import MyelinSettings, settings
 from ..log import suppress_noisy_loggers
 from ..models import Memory, MemoryMetadata, RecallResult
 from ..recall.query_planner import plan as plan_query
+from ..recall.reranker import Neocortex
 from ..recall.time_cells import (
     has_relative_temporal_expression,
     parse_session_date,
     parse_temporal_reference,
     recency_boost,
 )
-from ..recall.reranker import Neocortex
 from .amygdala import passes_gate
 from .chunking import chunk
 from .entorhinal import (
