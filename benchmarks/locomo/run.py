@@ -38,7 +38,7 @@ from sentence_transformers import SentenceTransformer  # noqa: E402
 
 from myelin.config import MyelinSettings  # noqa: E402
 from myelin.models import MemoryMetadata  # noqa: E402
-from myelin.reranker import Neocortex  # noqa: E402
+from myelin.recall.reranker import Neocortex  # noqa: E402
 from myelin.store.consolidation import extract_entities  # noqa: E402
 from myelin.store.hippocampus import Hippocampus  # noqa: E402
 from myelin.store.neocortex import SemanticNetwork  # noqa: E402

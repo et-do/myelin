@@ -27,7 +27,7 @@ from sentence_transformers import SentenceTransformer
 
 from myelin.config import MyelinSettings
 from myelin.models import Memory, MemoryMetadata, RecallResult
-from myelin.reranker import Neocortex
+from myelin.recall.reranker import Neocortex
 from myelin.store.chunking import chunk
 from myelin.store.consolidation import extract_entities
 from myelin.store.entorhinal import extract_keywords
