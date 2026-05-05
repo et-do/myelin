@@ -106,14 +106,24 @@ class SemanticNetwork:
         name: str,
         entity_type: str = "concept",
     ) -> None:
-        """Register an entity (idempotent — updates last_seen on conflict)."""
+        """Register an entity (idempotent — updates last_seen on conflict).
+
+        Explicit types (anything other than the generic ``"concept"`` or
+        ``"auto"`` placeholders) always win: a later generic registration
+        never downgrades a previously typed entity.
+        """
         now = datetime.now(UTC).isoformat()
         with self._lock:
             self.db.execute(
                 """INSERT INTO entities (name, entity_type, first_seen, last_seen)
                    VALUES (?, ?, ?, ?)
-                   ON CONFLICT(name) DO UPDATE SET last_seen = ?""",
-                [name.lower(), entity_type, now, now, now],
+                   ON CONFLICT(name) DO UPDATE SET
+                       last_seen = ?,
+                       entity_type = CASE
+                           WHEN ? NOT IN ('concept', 'auto') THEN ?
+                           ELSE entity_type
+                       END""",
+                [name.lower(), entity_type, now, now, now, entity_type, entity_type],
             )
 
     def get_entity(self, name: str) -> dict[str, Any] | None:
