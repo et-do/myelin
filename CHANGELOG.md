@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.1](https://github.com/et-do/myelin/compare/v0.3.0...v0.3.1) (2026-05-05)
+
+
+### Bug Fixes
+
+* separate smoke/full regression baselines; fix stale reranker import ([ee0569f](https://github.com/et-do/myelin/commit/ee0569f777f804ec8eba68ac43d7dd08cea75adf))
+
+
+### Documentation
+
+* backfill 0.3.0 changelog entries missed in squash merge ([1585437](https://github.com/et-do/myelin/commit/158543756d0b00bc122c614b8b962fecaa67b03e))
+
 ## [0.3.0](https://github.com/et-do/myelin/compare/v0.2.4...v0.3.0) (2026-05-05)
 
 
