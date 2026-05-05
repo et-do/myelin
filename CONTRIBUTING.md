@@ -201,11 +201,18 @@ myelin/               # Core library
     activation.py     # Hebbian co-access learning
     decay.py          # TTL pruning of stale memories
     time_cells.py     # Temporal reference detection + boost
-  server.py           # MCP server exposing tools to AI agents
+    reranker.py       # Cross-encoder re-ranking (Neocortex class)
+  integrations/       # File-format importers / exporters
+    ingest.py         # Bulk-load .txt/.md/.json files into memory
+    obsidian.py       # Obsidian vault import/export
+  ui/                 # Browser-based admin dashboard
+    serve.py          # Graph data builder + HTTP server
+    graph.html        # 3-tab SPA (Graph | Overview | Memories)
+  mcp.py              # MCP server exposing tools to AI agents
+  background.py       # Background worker + decay timer threads
   cli.py              # CLI interface
   config.py           # Configuration (pydantic-settings)
   models.py           # Pydantic data models
-  reranker.py         # Cross-encoder re-ranking
 tests/                # Unit tests (pytest)
 benchmarks/           # LongMemEval, LoCoMo, regression gate
 .github/              # CI workflows, Copilot instructions

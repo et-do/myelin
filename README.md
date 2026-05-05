@@ -487,6 +487,7 @@ myelin obsidian-export ~/vaults/work  # Export to an Obsidian vault (graph view)
 myelin obsidian-import ~/vaults/work  # Import from an Obsidian vault
 myelin ingest ./docs/       # Bulk-load .txt/.md/.json files into memory
 myelin debug-recall "your query"  # Full pipeline breakdown for debugging
+myelin graph                      # Launch browser admin dashboard (Graph | Overview | Memories)
 ```
 
 `myelin stats` accepts `--project`, `--agent-id`, and `--json` flags for filtering and machine-readable output.
