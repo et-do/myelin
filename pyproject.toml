@@ -82,6 +82,10 @@ warn_return_any = true
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
 
+[[tool.mypy.overrides]]
+module = "myelin.store.consolidation"
+warn_unused_ignores = false
+
 [tool.hatch.build.targets.wheel]
 packages = ["myelin"]
 

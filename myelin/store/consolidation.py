@@ -53,15 +53,15 @@ logger = logging.getLogger(__name__)
 # spaCy — optional; loaded lazily as a module-level singleton
 # ---------------------------------------------------------------------------
 
+_NLP: Any = None
+_SPACY_AVAILABLE = False
 try:
-    import spacy as _spacy  # type: ignore[import-untyped]
+    import spacy as _spacy  # type: ignore
 
     _NLP = _spacy.load("en_core_web_sm", disable=["parser", "lemmatizer"])
     _SPACY_AVAILABLE = True
     logger.debug("spaCy NER loaded (en_core_web_sm)")
 except Exception:
-    _NLP = None
-    _SPACY_AVAILABLE = False
     logger.debug("spaCy not available — using regex entity extraction")
 
 # spaCy label → our entity_type (unmapped labels fall through to regex)
