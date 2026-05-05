@@ -12,9 +12,13 @@
 * add graph UI, github-import, incremental sync, and package restructure ([#62](https://github.com/et-do/myelin/issues/62)) ([2165566](https://github.com/et-do/myelin/commit/2165566bf24fd31715919bd38f62005a1935cb1c))
 * add myelin stats command — terminal KPI dashboard for memory da… ([#56](https://github.com/et-do/myelin/issues/56)) ([1c7368d](https://github.com/et-do/myelin/commit/1c7368d76a33ea96bc84465309624b05e3cf1cc1))
 * add Obsidian vault export/import integration ([#61](https://github.com/et-do/myelin/issues/61)) ([6e8f34f](https://github.com/et-do/myelin/commit/6e8f34f007e1f4868c8ae074864eb8cc6deb417b))
+* hybrid spaCy NER + regex typed entity extraction in consolidation ([2165566](https://github.com/et-do/myelin/commit/2165566bf24fd31715919bd38f62005a1935cb1c))
+* wire thalamic pinning into recall results — pinned memories always returned, marked with `pinned: true` flag ([2165566](https://github.com/et-do/myelin/commit/2165566bf24fd31715919bd38f62005a1935cb1c))
 
 
 ### Bug Fixes
+
+* entity type priority in `add_entity` — explicit types always win over `concept`/`auto` defaults ([2165566](https://github.com/et-do/myelin/commit/2165566bf24fd31715919bd38f62005a1935cb1c))
 
 * commit regression baseline scores and exclude large results files from git ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
 * keep warm_up as fire-and-forget to avoid lifespan timeout on cold start ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
