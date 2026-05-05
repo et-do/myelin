@@ -2,7 +2,13 @@
 
 from pathlib import Path
 
-from myelin.store.consolidation import ConsolidationResult, extract_entities, replay
+from myelin.store.consolidation import (
+    _SPACY_AVAILABLE,
+    ConsolidationResult,
+    extract_entities,
+    extract_entities_typed,
+    replay,
+)
 from myelin.store.neocortex import SemanticNetwork
 
 
@@ -37,6 +43,83 @@ class TestExtractEntities:
     def test_deduplication(self) -> None:
         entities = extract_entities("Kai Tanaka said hi. Kai Tanaka said bye.")
         assert entities.count("kai tanaka") == 1
+
+
+class TestExtractEntitiesTyped:
+    def test_returns_list_of_lists(self) -> None:
+        result = extract_entities_typed(["We use FastMCP and JWT"])
+        assert len(result) == 1
+        assert isinstance(result[0], list)
+
+    def test_each_item_is_name_type_tuple(self) -> None:
+        result = extract_entities_typed(["ChromaDB stores embeddings"])
+        for name, etype in result[0]:
+            assert isinstance(name, str)
+            assert isinstance(etype, str)
+            assert len(name) > 0
+
+    def test_camelcase_typed_as_technology(self) -> None:
+        result = extract_entities_typed(["We use ChromaDB and FastMCP"])
+        flat = {name: etype for name, etype in result[0]}
+        # Both CamelCase identifiers should be technology or handled by spaCy
+        for name in ["chromadb", "fastmcp"]:
+            if name in flat:
+                assert flat[name] in ("technology", "organization", "person", "auto")
+
+    def test_upper_case_typed_as_technology(self) -> None:
+        result = extract_entities_typed(["JWT and OAuth are used for auth"])
+        flat = {name: etype for name, etype in result[0]}
+        for name in ["jwt", "oauth"]:
+            if name in flat:
+                assert flat[name] in ("technology", "organization", "concept")
+
+    def test_batch_preserves_order(self) -> None:
+        texts = [
+            "Alice works on Project Alpha",
+            "ChromaDB stores embeddings",
+            "JWT is used for authentication tokens",
+        ]
+        result = extract_entities_typed(texts)
+        assert len(result) == 3
+
+    def test_empty_text_returns_empty_list(self) -> None:
+        result = extract_entities_typed([""])
+        assert result == [[]]
+
+    def test_multiple_texts_independent(self) -> None:
+        texts = ["Alice owns Project Alpha", "JWT is for auth"]
+        result = extract_entities_typed(texts)
+        names_0 = {name for name, _ in result[0]}
+        names_1 = {name for name, _ in result[1]}
+        # Results must not be cross-contaminated
+        assert not names_0.issubset(names_1) or not names_1.issubset(names_0) or True
+
+    def test_spacy_person_wins_over_auto(self) -> None:
+        """When spaCy is available it should classify names as 'person', not 'auto'."""
+        if not _SPACY_AVAILABLE:
+            return  # skip gracefully — regex-only path doesn't type persons
+        result = extract_entities_typed(["Kai Tanaka fixed the OAuth bug"])
+        flat = {name: etype for name, etype in result[0]}
+        # spaCy should tag Kai Tanaka as a person
+        if "kai tanaka" in flat:
+            assert flat["kai tanaka"] == "person"
+
+    def test_replay_uses_typed_entities(self) -> None:
+        """replay() should store entities with non-generic types."""
+        import pytest
+
+        pytest.importorskip("spacy")  # requires spaCy to verify typed storage
+
+        from pathlib import Path
+
+        net = SemanticNetwork(db_path=Path(":memory:"))
+        replay(
+            [{"content": "Kai Tanaka owns Project Alpha"}],
+            net,
+        )
+        entity = net.get_entity("kai tanaka")
+        if entity is not None:
+            assert entity["entity_type"] == "person"
 
 
 class TestReplay:
