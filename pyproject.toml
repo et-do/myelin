@@ -36,6 +36,11 @@ experimental = [
     # Math utilities for experimental decay curves
     "numpy>=2.4",
 ]
+ner = [
+    # spaCy NER for typed entity extraction during consolidation
+    # Install model separately: uv run python -m spacy download en_core_web_sm
+    "spacy>=3.7",
+]
 dev = [
     "pytest>=9.0",
     "pytest-asyncio>=1.0",
