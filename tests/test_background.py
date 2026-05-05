@@ -1,4 +1,4 @@
-"""Tests for the BackgroundWorker."""
+"""Tests for myelin.background — BackgroundWorker and DecayTimer."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import time
 from typing import Any
 from unittest.mock import MagicMock
 
-from myelin.worker import BackgroundWorker
+from myelin.background import BackgroundWorker
 
 # ---------------------------------------------------------------------------
 # Helpers

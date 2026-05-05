@@ -1,4 +1,4 @@
-"""Tests for myelin graph — get_graph data function and cmd_graph CLI."""
+"""Tests for myelin.ui — graph data builder and browser dashboard server."""
 
 from __future__ import annotations
 
@@ -199,11 +199,13 @@ class TestCmdGraph:
         try:
             resp = urllib.request.urlopen(f"http://127.0.0.1:{port}", timeout=3)
             body = resp.read().decode("utf-8")
-            assert "myelin graph" in body
-            assert "GRAPH_DATA" in body
+            assert "myelin" in body
+            assert "APP_DATA" in body
             # Graph data injected
-            data = json.loads(body.split("/*GRAPH_DATA*/")[1].split(";")[0].rstrip())
-            assert len(data["nodes"]) > 0
+            data = json.loads(body.split("/*APP_DATA*/")[1].split(";")[0].rstrip())
+            assert len(data["graph"]["nodes"]) > 0
+            assert "all_memories" in data
+            assert "stats" in data
         finally:
             # Daemon thread dies with test process
             pass
@@ -214,7 +216,8 @@ class TestCmdGraph:
         """Smoke test: HTML template loads D3 from CDN."""
         import importlib.resources
 
-        ref = importlib.resources.files("myelin").joinpath("graph.html")
+        ref = importlib.resources.files("myelin.ui").joinpath("graph.html")
         html = ref.read_text(encoding="utf-8")
         assert "d3" in html.lower()
         assert "forceSimulation" in html
+        assert "APP_DATA" in html

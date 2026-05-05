@@ -1,4 +1,4 @@
-"""Tests for the `myelin stats` command (cmd_stats)."""
+"""Tests for the `myelin stats` CLI command (cmd_stats in myelin.cli)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ import pytest
 
 from myelin.cli import main
 from myelin.config import MyelinSettings
-from myelin.server import configure, do_store
+from myelin.mcp import configure, do_store
 
 
 @pytest.fixture(autouse=True)

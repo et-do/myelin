@@ -8,7 +8,7 @@ from unittest.mock import patch
 import pytest
 
 from myelin.config import MyelinSettings
-from myelin.server import configure, do_debug_recall, do_store
+from myelin.mcp import configure, do_debug_recall, do_store
 
 
 @pytest.fixture(autouse=True)
@@ -163,7 +163,7 @@ class TestDoDebugRecallWithMemories:
 class TestDebugRecallHebbianWeight:
     def test_hebbian_weight_positive_after_co_recall(self) -> None:
         """After two memories are co-recalled, Hebbian weight should show > 0."""
-        from myelin.server import do_recall
+        from myelin.mcp import do_recall
 
         do_store("We use JWT RS256 tokens for authentication in the service")
         do_store("The auth service validates tokens on every API request")

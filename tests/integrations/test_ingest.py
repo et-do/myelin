@@ -1,4 +1,4 @@
-"""Tests for the ingest module (bulk memory loading)."""
+"""Tests for myelin.integrations.ingest — bulk memory loading from files."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import textwrap
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from myelin.ingest import (
+from myelin.integrations.ingest import (
     IngestResult,
     _parse_frontmatter,
     ingest_directory,

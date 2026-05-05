@@ -1,11 +1,11 @@
-"""Tests for the MCP server logic (do_* functions, not MCP transport)."""
+"""Tests for the MCP server logic in myelin.mcp (do_* functions, not MCP transport)."""
 
 from __future__ import annotations
 
 import pytest
 
 from myelin.config import MyelinSettings
-from myelin.server import (
+from myelin.mcp import (
     _signal_handler,
     configure,
     do_consolidate,
@@ -71,7 +71,7 @@ class TestDoStore:
 
     def test_relations_writes_edges_to_neocortex(self) -> None:
         """Explicit relations are stored as neocortex edges immediately."""
-        from myelin.server import _get_neocortex
+        from myelin.mcp import _get_neocortex
 
         result = do_store(
             "AuthService depends on JWTHelper for token validation",
@@ -134,7 +134,7 @@ class TestDoStore:
 
     def test_relations_on_rejected_store_not_written(self) -> None:
         """Relations must not be written if the store itself is rejected."""
-        from myelin.server import _get_neocortex
+        from myelin.mcp import _get_neocortex
 
         do_store("hi", relations='[["A", "rel", "B"]]')
         net = _get_neocortex()
@@ -284,7 +284,7 @@ class TestAutoConsolidation:
 
 class TestDoPinUnpin:
     def test_pin_returns_pinned_status(self) -> None:
-        from myelin.server import do_pin
+        from myelin.mcp import do_pin
 
         result = do_pin("mem-123", priority=2, label="important")
         assert result["status"] == "pinned"
@@ -292,20 +292,20 @@ class TestDoPinUnpin:
         assert result["priority"] == 2
 
     def test_unpin_existing_memory(self) -> None:
-        from myelin.server import do_pin, do_unpin
+        from myelin.mcp import do_pin, do_unpin
 
         do_pin("mem-456")
         result = do_unpin("mem-456")
         assert result["status"] == "unpinned"
 
     def test_unpin_nonexistent_returns_not_found(self) -> None:
-        from myelin.server import do_unpin
+        from myelin.mcp import do_unpin
 
         result = do_unpin("does-not-exist")
         assert result["status"] == "not_found"
 
     def test_pinned_memories_injected_into_recall(self) -> None:
-        from myelin.server import do_pin, do_recall
+        from myelin.mcp import do_pin, do_recall
 
         r = do_store("The load balancer uses nginx with round-robin policy")
         memory_id = r["id"]
@@ -324,13 +324,13 @@ class TestDoDecaySweepWithStale:
         """Memories with ancient last_accessed dates are pruned."""
         from unittest.mock import patch
 
-        from myelin.server import do_decay_sweep
+        from myelin.mcp import do_decay_sweep
 
         do_store("Ancient ephemeral fact that should be pruned by decay")
         memory_id = do_recall("ephemeral fact")[0]["id"]
 
         # Make find_stale return it as stale
-        with patch("myelin.server.find_stale", return_value=[memory_id]):
+        with patch("myelin.mcp.find_stale", return_value=[memory_id]):
             result = do_decay_sweep()
 
         assert result["pruned"] == 1
@@ -363,7 +363,7 @@ class TestDoStoreChunksAndReplace:
 class TestShutdown:
     def test_shutdown_clears_singletons(self) -> None:
         """shutdown() closes and resets all server singletons."""
-        import myelin.server as srv
+        import myelin.mcp as srv
 
         # Trigger initialization
         do_store("Initialize the server singletons by storing something here")
@@ -377,7 +377,7 @@ class TestShutdown:
 
     def test_shutdown_idempotent(self) -> None:
         """Calling shutdown twice does not raise."""
-        import myelin.server as srv
+        import myelin.mcp as srv
 
         srv.shutdown()
         srv.shutdown()  # should not raise
@@ -434,7 +434,7 @@ class TestAgentNamespace:
 
     def test_agent_id_stored_in_metadata(self) -> None:
         """agent_id is persisted in ChromaDB and round-trips correctly."""
-        from myelin.server import _get_hippocampus
+        from myelin.mcp import _get_hippocampus
 
         do_store(
             "The feature flag service uses LaunchDarkly for all products",

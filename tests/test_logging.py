@@ -10,7 +10,7 @@ import pytest
 
 from myelin.config import MyelinSettings
 from myelin.log import JSONFormatter, request_id, setup_logging
-from myelin.server import (
+from myelin.mcp import (
     _track,
     configure,
     shutdown,
@@ -155,9 +155,9 @@ class TestWarmUp:
         configure(tmp_settings)
         warm_up()
         # After warm_up, hippocampus should be initialized
-        from myelin.server import _hippocampus
+        import myelin.mcp as _mcp_mod
 
-        assert _hippocampus is not None
+        assert _mcp_mod._hippocampus is not None
 
 
 # ------------------------------------------------------------------
@@ -171,13 +171,13 @@ class TestShutdown:
         configure(tmp_settings)
 
         # Force initialization of all stores
-        from myelin.server import do_recall, do_status, do_store
+        from myelin.mcp import do_recall, do_status, do_store
 
         do_store("Test memory for shutdown verification here")
         do_recall("test")  # initialises _hebbian
         do_status()  # initialises _neocortex + _thalamus
 
-        import myelin.server as srv
+        import myelin.mcp as srv
 
         assert srv._hebbian is not None
         assert srv._neocortex is not None
@@ -208,7 +208,7 @@ class TestShutdown:
         cfg = MyelinSettings(data_dir=tmp_path / ".myelin", decay_interval_hours=24.0)  # type: ignore[arg-type]
         configure(cfg)
 
-        import myelin.server as srv
+        import myelin.mcp as srv
 
         timer = srv._get_decay_timer()
         timer.start()
