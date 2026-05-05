@@ -370,11 +370,14 @@ def do_recall(
     thal = _get_thalamus()
     if results:
         thal.touch([r.memory.id for r in results])
-    pinned = thal.get_pinned()
-    if pinned:
+    pinned_entries = thal.get_pinned()
+    # Track all pinned IDs so the response can mark them regardless of
+    # whether they arrived via natural recall or thalamic injection.
+    pinned_ids: set[str] = {p["memory_id"] for p in pinned_entries}
+    if pinned_entries:
         recalled_ids = {r.memory.id for r in results}
         missing_pin_ids = [
-            p["memory_id"] for p in pinned if p["memory_id"] not in recalled_ids
+            p["memory_id"] for p in pinned_entries if p["memory_id"] not in recalled_ids
         ]
         if missing_pin_ids:
             hc = _get_hippocampus()
@@ -394,6 +397,7 @@ def do_recall(
             "memory_type": r.memory.metadata.memory_type,
             "parent_id": r.memory.metadata.parent_id,
             "access_count": r.memory.access_count,
+            "pinned": r.memory.id in pinned_ids,
         }
         for r in results
     ]
