@@ -52,7 +52,7 @@ _GIT_FORMAT = f"%H{_GIT_FS}%an{_GIT_FS}%ae{_GIT_FS}%ai{_GIT_FS}%s{_GIT_FS}%b{_GI
 
 def _run(cmd: list[str], **kwargs: Any) -> str:
     """Run *cmd* and return stdout, raising RuntimeError on failure."""
-    result = subprocess.run(
+    result: subprocess.CompletedProcess[str] = subprocess.run(
         cmd,
         capture_output=True,
         text=True,

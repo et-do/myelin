@@ -1068,7 +1068,6 @@ def cmd_github_import(args: argparse.Namespace) -> None:
             memory_type=meta.get("memory_type", ""),
             tags=meta.get("tags", ""),
             source=meta.get("source", ""),
-            created_at=meta.get("created_at", ""),
         )
         if store_result.get("status") in {"stored", "updated"}:
             stored += 1
