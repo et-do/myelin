@@ -1,6 +1,6 @@
 [project]
 name = "myelin-mcp"
-version = "0.2.4"
+version = "0.3.0"
 description = "Neuromorphic long-term AI memory system — brain-inspired context for AI agents"
 readme = "README.md"
 license = "MIT"
