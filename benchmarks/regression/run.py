@@ -50,7 +50,7 @@ _LOCOMO_CONV_IDS_SMOKE = ["conv-30"]  # ~105 QA
 _LOCOMO_CONV_IDS_FULL = ["conv-30", "conv-26"]  # 105 + 199 = 304 QA
 
 _DATA_DIR = Path(__file__).resolve().parent.parent
-_BASELINE_DIR = _DATA_DIR / "regression" / "baseline"
+_BASELINE_ROOT = _DATA_DIR / "regression" / "baseline"
 
 
 def _select_lme_subset(
@@ -356,6 +356,8 @@ def main() -> None:
     locomo_ids = _LOCOMO_CONV_IDS_FULL if full else _LOCOMO_CONV_IDS_SMOKE
     mode_label = "full (release)" if full else "smoke (push)"
 
+    baseline_dir = _BASELINE_ROOT / ("full" if full else "smoke")
+
     # Load data
     lme_path = _DATA_DIR / "longmemeval" / "data" / "longmemeval_s_cleaned.json"
     locomo_path = _DATA_DIR / "locomo" / "data" / "locomo10.json"
@@ -396,31 +398,31 @@ def main() -> None:
     print(f"\nTotal time: {elapsed:.0f}s", flush=True)
 
     if create_baseline:
-        _BASELINE_DIR.mkdir(parents=True, exist_ok=True)
-        (_BASELINE_DIR / "lme_results.json").write_text(
+        baseline_dir.mkdir(parents=True, exist_ok=True)
+        (baseline_dir / "lme_results.json").write_text(
             json.dumps(lme_results, indent=2)
         )
-        (_BASELINE_DIR / "lme_scores.json").write_text(json.dumps(lme_scores, indent=2))
-        (_BASELINE_DIR / "locomo_results.json").write_text(
+        (baseline_dir / "lme_scores.json").write_text(json.dumps(lme_scores, indent=2))
+        (baseline_dir / "locomo_results.json").write_text(
             json.dumps(locomo_results, indent=2)
         )
-        (_BASELINE_DIR / "locomo_scores.json").write_text(
+        (baseline_dir / "locomo_scores.json").write_text(
             json.dumps(locomo_scores, indent=2)
         )
-        print(f"\nBaseline saved to {_BASELINE_DIR}/", flush=True)
+        print(f"\nBaseline saved to {baseline_dir}/", flush=True)
         _print_scores(lme_scores, locomo_scores)
         return
 
     # Compare against baseline
-    if not _BASELINE_DIR.exists():
+    if not baseline_dir.exists():
         print("\nNo baseline found. Run with --create-baseline first.", file=sys.stderr)
         _print_scores(lme_scores, locomo_scores)
         sys.exit(1)
 
-    b_lme_scores = json.loads((_BASELINE_DIR / "lme_scores.json").read_text())
-    b_locomo_scores = json.loads((_BASELINE_DIR / "locomo_scores.json").read_text())
-    b_lme_results_path = _BASELINE_DIR / "lme_results.json"
-    b_locomo_results_path = _BASELINE_DIR / "locomo_results.json"
+    b_lme_scores = json.loads((baseline_dir / "lme_scores.json").read_text())
+    b_locomo_scores = json.loads((baseline_dir / "locomo_scores.json").read_text())
+    b_lme_results_path = baseline_dir / "lme_results.json"
+    b_locomo_results_path = baseline_dir / "locomo_results.json"
     b_lme_results = (
         json.loads(b_lme_results_path.read_text())
         if b_lme_results_path.exists()
