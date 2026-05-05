@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.3.0](https://github.com/et-do/myelin/compare/v0.2.4...v0.3.0) (2026-05-05)
+
+
+### ⚠ BREAKING CHANGES
+
+* myelin.server, myelin.ingest, myelin.reranker, myelin.timer, and myelin.worker are removed. Use myelin.mcp, myelin.integrations.ingest, myelin.recall.reranker, and myelin.background respectively.
+
+### Features
+
+* add graph UI, github-import, incremental sync, and package restructure ([#62](https://github.com/et-do/myelin/issues/62)) ([2165566](https://github.com/et-do/myelin/commit/2165566bf24fd31715919bd38f62005a1935cb1c))
+* add myelin stats command — terminal KPI dashboard for memory da… ([#56](https://github.com/et-do/myelin/issues/56)) ([1c7368d](https://github.com/et-do/myelin/commit/1c7368d76a33ea96bc84465309624b05e3cf1cc1))
+* add Obsidian vault export/import integration ([#61](https://github.com/et-do/myelin/issues/61)) ([6e8f34f](https://github.com/et-do/myelin/commit/6e8f34f007e1f4868c8ae074864eb8cc6deb417b))
+
+
+### Bug Fixes
+
+* commit regression baseline scores and exclude large results files from git ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
+* keep warm_up as fire-and-forget to avoid lifespan timeout on cold start ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
+* make baseline results files optional — flip tracking skipped when absent ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
+* suppress noisy third-party loggers, log model load progress ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
+* suppress noisy third-party loggers, log model load progress ([#58](https://github.com/et-do/myelin/issues/58)) ([21cf0ee](https://github.com/et-do/myelin/commit/21cf0ee223ca91b27a67dc4e616970a251f930d5))
+* suppress noisy third-party loggers, log model load progress ([#60](https://github.com/et-do/myelin/issues/60)) ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
+
+
+### Documentation
+
+* correct conventional commit release trigger table in CONTRIBUTING ([#55](https://github.com/et-do/myelin/issues/55)) ([daf8ea4](https://github.com/et-do/myelin/commit/daf8ea4ead2dda42eacfaa6f246e36222bc32081))
+* restructure TODO — compress completed work, add MCP/test/benchmark gaps ([#57](https://github.com/et-do/myelin/issues/57)) ([0f3f562](https://github.com/et-do/myelin/commit/0f3f5627c3039d2cd4ea4451fc676bd2baafe9a0))
+* split README into focused guide + architecture doc, move TODO to docs/ ([#54](https://github.com/et-do/myelin/issues/54)) ([9884b64](https://github.com/et-do/myelin/commit/9884b646295d995ba332828e396705f8f0538e5c))
+* update readme section header ([4a8dc3b](https://github.com/et-do/myelin/commit/4a8dc3bb21e3501e077fe8c3122e503b4aabc8f3))
+* update release-please-changelog ([#63](https://github.com/et-do/myelin/issues/63)) ([c5eb1e1](https://github.com/et-do/myelin/commit/c5eb1e1d54e14d433806560ebfa42db0a2a87288))
+
 ## [0.2.4](https://github.com/et-do/myelin/compare/v0.2.3...v0.2.4) (2026-04-20)
 
 
