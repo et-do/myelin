@@ -8,7 +8,7 @@ import pytest
 
 from myelin.cli import main
 from myelin.config import MyelinSettings
-from myelin.server import configure
+from myelin.mcp import configure
 
 
 @pytest.fixture(autouse=True)
@@ -87,7 +87,7 @@ class TestCmdExportMd:
     def test_exported_file_has_frontmatter_and_content(
         self, tmp_path: pytest.TempPathFactory, capsys: pytest.CaptureFixture[str]
     ) -> None:
-        from myelin.server import do_store
+        from myelin.mcp import do_store
 
         do_store(
             "This is a test memory",
@@ -109,7 +109,7 @@ class TestCmdExportMd:
         assert "Exported 1 memories" in capsys.readouterr().out
 
     def test_file_named_by_memory_id(self, tmp_path: pytest.TempPathFactory) -> None:
-        from myelin.server import do_store
+        from myelin.mcp import do_store
 
         result = do_store("Another memory for naming test")
         mid = result["id"]
@@ -121,7 +121,7 @@ class TestCmdExportMd:
     def test_empty_metadata_fields_omitted(
         self, tmp_path: pytest.TempPathFactory
     ) -> None:
-        from myelin.server import do_store
+        from myelin.mcp import do_store
 
         do_store("Minimal memory to test that empty frontmatter fields are omitted")
         out_dir = tmp_path / "min"
@@ -142,7 +142,7 @@ class TestCmdImportMd:
         capsys: pytest.CaptureFixture[str],
     ) -> None:
         """export-md produces files that import-md can ingest without error."""
-        from myelin.server import do_store
+        from myelin.mcp import do_store
 
         do_store(
             "Roundtrip test memory for markdown export and import validation",

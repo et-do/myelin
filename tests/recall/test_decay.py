@@ -2,7 +2,7 @@
 
 from datetime import UTC, datetime, timedelta
 
-from myelin.recall.decay import find_stale
+from myelin.recall.decay import find_lru, find_stale
 
 
 class TestFindStale:
@@ -106,3 +106,53 @@ class TestFindStale:
         meta = [{"id": "a", "last_accessed": last}]  # no access_count
         result = find_stale(meta, max_idle_days=90, min_access_count=2)
         assert result == ["a"]
+
+
+class TestFindLru:
+    def _meta(self, id_: str, days_ago: int) -> dict:
+        ts = (datetime.now(UTC) - timedelta(days=days_ago)).isoformat()
+        return {"id": id_, "last_accessed": ts}
+
+    def test_empty_list_returns_empty(self) -> None:
+        assert find_lru([], 3) == []
+
+    def test_n_zero_returns_empty(self) -> None:
+        meta = [self._meta("a", 5), self._meta("b", 10)]
+        assert find_lru(meta, 0) == []
+
+    def test_n_negative_returns_empty(self) -> None:
+        meta = [self._meta("a", 5)]
+        assert find_lru(meta, -1) == []
+
+    def test_returns_oldest_first(self) -> None:
+        meta = [
+            self._meta("recent", 1),
+            self._meta("old", 30),
+            self._meta("ancient", 90),
+        ]
+        result = find_lru(meta, 2)
+        assert result == ["ancient", "old"]
+
+    def test_excludes_pinned_ids(self) -> None:
+        meta = [
+            self._meta("ancient", 90),
+            self._meta("medium", 30),
+            self._meta("recent", 1),
+        ]
+        result = find_lru(meta, 1, exclude_ids={"ancient"})
+        assert result == ["medium"]
+
+    def test_n_greater_than_available_returns_all(self) -> None:
+        meta = [self._meta("a", 10), self._meta("b", 5)]
+        result = find_lru(meta, 10)
+        assert set(result) == {"a", "b"}
+
+    def test_excludes_multiple_pinned(self) -> None:
+        meta = [self._meta(str(i), i * 10) for i in range(5)]
+        # Exclude the 2 oldest (40 and 30 days ago, i.e. ids "4" and "3")
+        result = find_lru(meta, 2, exclude_ids={"4", "3"})
+        assert result == ["2", "1"]
+
+    def test_all_excluded_returns_empty(self) -> None:
+        meta = [self._meta("a", 10), self._meta("b", 20)]
+        assert find_lru(meta, 5, exclude_ids={"a", "b"}) == []

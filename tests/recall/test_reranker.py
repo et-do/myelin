@@ -1,4 +1,4 @@
-"""Tests for neocortex.py — cross-encoder re-ranker."""
+"""Tests for myelin.recall.reranker — Neocortex cross-encoder re-ranker."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import numpy as np
 
-from myelin.reranker import Neocortex
+from myelin.recall.reranker import Neocortex
 
 
 class TestNeocortexRerank:
@@ -43,7 +43,7 @@ class TestNeocortexRerank:
         call_args = mock_ce.predict.call_args[0][0]
         assert call_args == [["what color?", "red"], ["what color?", "blue"]]
 
-    @patch("myelin.reranker.CrossEncoder")
+    @patch("myelin.recall.reranker.CrossEncoder")
     def test_default_model_loaded(self, mock_cls: MagicMock) -> None:
         mock_cls.return_value = MagicMock()
         mock_cls.return_value.predict.return_value = [0.5]

@@ -17,7 +17,7 @@ from typing import Any
 
 from myelin.config import MyelinSettings
 from myelin.models import MemoryMetadata
-from myelin.reranker import Neocortex
+from myelin.recall.reranker import Neocortex
 from myelin.store.hippocampus import Hippocampus
 
 

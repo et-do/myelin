@@ -39,7 +39,24 @@ class TestEntityOperations:
         net.add_entity("auth")
         assert net.entity_count() == 1
 
-    def test_get_nonexistent_returns_none(self) -> None:
+    def test_specific_type_wins_over_concept(self) -> None:
+        """A specific entity_type should overwrite the default 'concept' type."""
+        net = _make_network()
+        net.add_entity("alice")  # inserted as "concept" (default)
+        net.add_entity("alice", entity_type="person")  # should update type
+        entity = net.get_entity("alice")
+        assert entity is not None
+        assert entity["entity_type"] == "person"
+
+    def test_concept_does_not_overwrite_specific_type(self) -> None:
+        """A later 'concept' registration must not demote an explicit type."""
+        net = _make_network()
+        net.add_entity("kafka", entity_type="technology")
+        net.add_entity("kafka")  # called by add_relationship internally
+        entity = net.get_entity("kafka")
+        assert entity is not None
+        assert entity["entity_type"] == "technology"
+
         net = _make_network()
         assert net.get_entity("nope") is None
 

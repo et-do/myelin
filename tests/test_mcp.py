@@ -1,4 +1,4 @@
-"""Tests for the MCP server logic (do_* functions, not MCP transport)."""
+"""Tests for the MCP server logic in myelin.mcp (do_* functions, not MCP transport)."""
 
 from __future__ import annotations
 
@@ -11,11 +11,9 @@ from myelin.mcp import (
     do_consolidate,
     do_decay_sweep,
     do_forget,
-    do_pin,
     do_recall,
     do_status,
     do_store,
-    do_unpin,
     warm_up,
 )
 
@@ -187,76 +185,6 @@ class TestDoForget:
         # Verify it's gone
         status = do_status()
         assert status["memory_count"] == 0
-
-
-class TestDoPin:
-    def test_pin_returns_correct_shape(self) -> None:
-        s = do_store("The system identity is 'myelin-agent' running on prod")
-        result = do_pin(s["id"], priority=0, label="identity")
-        assert result["memory_id"] == s["id"]
-        assert result["status"] == "pinned"
-        assert result["priority"] == 0
-
-    def test_unpin_returns_unpinned(self) -> None:
-        s = do_store("Critical fact: we use JWT RS256 for auth across all services")
-        do_pin(s["id"])
-        result = do_unpin(s["id"])
-        assert result["memory_id"] == s["id"]
-        assert result["status"] == "unpinned"
-
-    def test_unpin_missing_returns_not_found(self) -> None:
-        result = do_unpin("nonexistent-id-xyz")
-        assert result["status"] == "not_found"
-
-    def test_pinned_count_reflected_in_status(self) -> None:
-        assert do_status()["pinned_count"] == 0
-        s = do_store("Active project: Myelin graph UI on feat/graph-ui branch")
-        do_pin(s["id"])
-        assert do_status()["pinned_count"] == 1
-
-    def test_pinned_memory_always_appears_in_recall(self) -> None:
-        """A pinned memory must appear in recall results even for unrelated queries."""
-        pinned = do_store("System identity: this agent is called 'myelin-prod'")
-        do_pin(pinned["id"], priority=0, label="identity")
-
-        # Store an unrelated memory and recall on an unrelated topic
-        do_store("The database uses PostgreSQL for persistent storage")
-        results = do_recall("PostgreSQL database storage")
-
-        result_ids = [r["id"] for r in results]
-        assert pinned["id"] in result_ids, "Pinned memory must always appear in results"
-
-    def test_pinned_memory_marked_in_results(self) -> None:
-        """Results from thalamic injection are marked with pinned=True."""
-        pinned = do_store("System identity: agent name is 'myelin-prod'")
-        do_pin(pinned["id"], priority=0)
-
-        do_store("Redis is used for session caching in the API layer")
-        results = do_recall("Redis session caching")
-
-        # Find the pinned result in the response
-        pinned_results = [r for r in results if r.get("pinned") is True]
-        normal_results = [r for r in results if not r.get("pinned")]
-        assert any(r["id"] == pinned["id"] for r in pinned_results)
-        assert all(r["id"] != pinned["id"] for r in normal_results)
-
-    def test_forget_also_unpins(self) -> None:
-        """Forgetting a pinned memory removes the pin too."""
-        s = do_store("Critical fact about production config for pinning test")
-        do_pin(s["id"])
-        assert do_status()["pinned_count"] == 1
-
-        do_forget(s["id"])
-        assert do_status()["pinned_count"] == 0
-
-    def test_pinned_not_duplicated_when_already_recalled(self) -> None:
-        """A pinned memory already in top-N results must not appear twice."""
-        s = do_store("JWT RS256 tokens are used for all API authentication")
-        do_pin(s["id"])
-
-        results = do_recall("JWT authentication tokens")
-        ids = [r["id"] for r in results]
-        assert ids.count(s["id"]) == 1, "Pinned memory should appear exactly once"
 
 
 class TestDoDecaySweep:

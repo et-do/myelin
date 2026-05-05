@@ -16,7 +16,7 @@ suppress_noisy_loggers()
 
 
 def cmd_status(_args: argparse.Namespace) -> None:
-    from .server import configure, do_status
+    from .mcp import configure, do_status
 
     configure(settings)
     result = do_status()
@@ -331,20 +331,27 @@ def cmd_decay(_args: argparse.Namespace) -> None:
 
 
 def cmd_serve(_args: argparse.Namespace) -> None:
-    from .server import main as serve_main
+    from .mcp import main as serve_main
 
     serve_main()
 
 
 def cmd_consolidate(_args: argparse.Namespace) -> None:
-    from .server import do_consolidate
+    from .mcp import do_consolidate
 
     result = do_consolidate()
     print(json.dumps(result, indent=2))
 
 
+def cmd_graph(args: argparse.Namespace) -> None:
+    """Serve the interactive admin dashboard."""
+    from .ui.serve import serve_graph
+
+    serve_graph(args)
+
+
 def cmd_debug_recall(args: argparse.Namespace) -> None:
-    from .server import configure, do_debug_recall
+    from .mcp import configure, do_debug_recall
 
     configure(settings)
     data = do_debug_recall(
@@ -473,6 +480,7 @@ def cmd_export(args: argparse.Namespace) -> None:
 def cmd_export_md(args: argparse.Namespace) -> None:
     """Export memories as individual Markdown files with YAML frontmatter."""
     import os
+    from pathlib import Path
 
     from .store import Hippocampus
 
@@ -482,12 +490,35 @@ def cmd_export_md(args: argparse.Namespace) -> None:
     meta_by_id = {m["id"]: m for m in metadata}
 
     out_dir = args.output_dir
+    out_path = Path(out_dir)
     os.makedirs(out_dir, exist_ok=True)
 
+    # Incremental: build set of IDs that need (re)writing
+    skip_ids: set[str] = set()
+    if args.incremental:
+        from .integrations.sync import SyncRegistry
+
+        registry = SyncRegistry(settings.data_dir / "sync.db")
+        merged_for_filter = [
+            {**meta_by_id.get(m["id"], {}), "id": m["id"], "content": m["content"]}
+            for m in memories
+        ]
+        to_write = {
+            m["id"]
+            for m in registry.filter_for_export(
+                "export-md", out_path, merged_for_filter
+            )
+        }
+        skip_ids = {m["id"] for m in merged_for_filter} - to_write
+
     meta_fields = ("project", "scope", "language", "memory_type", "source", "tags")
-    count = 0
+    count = unchanged = 0
+    written_mems: list[dict[str, Any]] = []
     for mem in memories:
         mid = mem["id"]
+        if mid in skip_ids:
+            unchanged += 1
+            continue
         meta = meta_by_id.get(mid, {})
         content = mem["content"]
 
@@ -505,16 +536,23 @@ def cmd_export_md(args: argparse.Namespace) -> None:
         with open(filename, "w", encoding="utf-8") as f:
             f.write(frontmatter + content)
         count += 1
+        written_mems.append({**meta, "id": mid, "content": content})
 
-    print(f"Exported {count} memories to {out_dir}/")
+    if args.incremental:
+        registry.record_exports("export-md", out_path, written_mems)
+        suffix = f" ({count} written, {unchanged} unchanged)"
+    else:
+        suffix = ""
+    print(f"Exported {count + unchanged} memories to {out_dir}/{suffix}")
 
 
 def cmd_import_md(args: argparse.Namespace) -> None:
     """Import memories from a directory of Markdown files with YAML frontmatter."""
     import os
     import re
+    from pathlib import Path
 
-    from .server import configure, do_store
+    from .mcp import configure, do_store
 
     configure(settings)
 
@@ -523,14 +561,31 @@ def cmd_import_md(args: argparse.Namespace) -> None:
     meta_fields = {"project", "scope", "language", "memory_type", "source", "tags"}
 
     md_dir = args.input_dir
+    md_path = Path(md_dir)
     files = sorted(f for f in os.listdir(md_dir) if f.endswith(".md"))
     if not files:
         print(f"No .md files found in {md_dir}")
         return
 
-    stored = skipped = 0
+    # Incremental: filter to only new/changed files
+    registry = None
+    skip_paths: frozenset[Path] = frozenset()
+    new_files_for_record: list[Path] = []
+    if args.incremental:
+        from .integrations.sync import SyncRegistry
+
+        registry = SyncRegistry(settings.data_dir / "sync.db")
+        all_paths = [md_path / f for f in files]
+        new_paths = registry.filter_for_import("import-md", md_path, all_paths)
+        skip_paths = frozenset(all_paths) - frozenset(new_paths)
+        new_files_for_record = new_paths
+
+    stored = skipped = unchanged = 0
     for fname in files:
-        path = os.path.join(md_dir, fname)
+        path = md_path / fname
+        if path in skip_paths:
+            unchanged += 1
+            continue
         with open(path, encoding="utf-8", errors="replace") as f:
             text = f.read()
 
@@ -563,11 +618,16 @@ def cmd_import_md(args: argparse.Namespace) -> None:
         else:
             skipped += 1
 
-    print(f"Imported {stored} memories ({skipped} skipped) from {md_dir}/")
+    if registry is not None:
+        registry.record_imports("import-md", md_path, new_files_for_record)
+        suffix = f" ({unchanged} files unchanged)"
+    else:
+        suffix = ""
+    print(f"Imported {stored} memories ({skipped} skipped) from {md_dir}/{suffix}")
 
 
 def cmd_import(args: argparse.Namespace) -> None:
-    from .server import configure, do_store
+    from .mcp import configure, do_store
 
     configure(settings)
 
@@ -623,8 +683,24 @@ def cmd_obsidian_export(args: argparse.Namespace) -> None:
 
     vault = Path(args.vault)
     exporter = ObsidianExporter()
-    count = exporter.export(merged, vault)
-    print(f"Exported {count} memories to {vault}/")
+
+    if args.incremental:
+        from .integrations.sync import SyncRegistry
+
+        registry = SyncRegistry(settings.data_dir / "sync.db")
+        new_memories = registry.filter_for_export("obsidian", vault, merged)
+        skip_ids = frozenset(m["id"] for m in merged) - frozenset(
+            m["id"] for m in new_memories
+        )
+        count = exporter.export(merged, vault, skip_ids=skip_ids)
+        registry.record_exports("obsidian", vault, new_memories)
+        print(
+            f"Exported {len(merged)} memories to {vault}/"
+            f" ({count} written, {len(skip_ids)} unchanged)"
+        )
+    else:
+        count = exporter.export(merged, vault)
+        print(f"Exported {count} memories to {vault}/")
 
 
 def cmd_obsidian_import(args: argparse.Namespace) -> None:
@@ -632,13 +708,30 @@ def cmd_obsidian_import(args: argparse.Namespace) -> None:
     from pathlib import Path
 
     from .integrations.obsidian import ObsidianImporter
-    from .server import configure, do_store
+    from .mcp import configure, do_store
 
     configure(settings)
 
     vault = Path(args.vault)
     importer = ObsidianImporter()
-    pairs = importer.import_(vault, default_source=args.source)
+
+    registry = None
+    new_files: list[Path] = []
+    if args.incremental:
+        from .integrations.sync import SyncRegistry
+
+        registry = SyncRegistry(settings.data_dir / "sync.db")
+        memories_root = vault / "Memories"
+        all_files = (
+            sorted(memories_root.rglob("*.md")) if memories_root.exists() else []
+        )
+        new_files = registry.filter_for_import("obsidian", vault, all_files)
+        unchanged = len(all_files) - len(new_files)
+        pairs = importer.import_(
+            vault, only_files=frozenset(new_files), default_source=args.source
+        )
+    else:
+        pairs = importer.import_(vault, default_source=args.source)
 
     stored = skipped = 0
     for content, meta in pairs:
@@ -656,11 +749,18 @@ def cmd_obsidian_import(args: argparse.Namespace) -> None:
         else:
             skipped += 1
 
-    print(f"Imported {stored} memories ({skipped} skipped) from {vault}/")
+    if registry is not None:
+        registry.record_imports("obsidian", vault, new_files)
+        print(
+            f"Imported {stored} memories ({skipped} skipped) from {vault}/"
+            f" ({unchanged} files unchanged)"
+        )
+    else:
+        print(f"Imported {stored} memories ({skipped} skipped) from {vault}/")
 
 
 def cmd_ingest(args: argparse.Namespace) -> None:
-    from .server import configure, do_ingest
+    from .mcp import configure, do_ingest
 
     configure(settings)
     result = do_ingest(
@@ -689,6 +789,35 @@ def main() -> None:
     sub.add_parser("serve", help="Run MCP server")
     sub.add_parser("consolidate", help="Replay memories into semantic network")
 
+    p_graph = sub.add_parser(
+        "graph", help="Serve interactive entity graph in the browser"
+    )
+    p_graph.add_argument(
+        "--port",
+        type=int,
+        default=0,
+        help="Port to serve on (default: random free port)",
+    )
+    p_graph.add_argument(
+        "--min-weight",
+        dest="min_weight",
+        type=float,
+        default=0.0,
+        help="Minimum edge weight to include (default: 0 = all)",
+    )
+    p_graph.add_argument(
+        "--limit",
+        type=int,
+        default=300,
+        help="Max nodes to display, ordered by degree (default: 300)",
+    )
+    p_graph.add_argument(
+        "--no-open",
+        dest="no_open",
+        action="store_true",
+        help="Do not open browser automatically",
+    )
+
     p_stats = sub.add_parser("stats", help="Show memory KPI dashboard")
     p_stats.add_argument("--project", default="", help="Filter to a specific project")
     p_stats.add_argument(
@@ -710,6 +839,11 @@ def main() -> None:
         "export-md", help="Export memories as Markdown files with YAML frontmatter"
     )
     p_export_md.add_argument("output_dir", help="Directory to write .md files into")
+    p_export_md.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Only write memories that are new or changed since last export",
+    )
 
     p_import_md = sub.add_parser(
         "import-md", help="Import memories from a directory of Markdown files"
@@ -719,6 +853,11 @@ def main() -> None:
         "--source",
         default="import-md",
         help="Source label for imported memories (default: import-md)",
+    )
+    p_import_md.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Only import files that are new or changed since last import",
     )
 
     p_ingest = sub.add_parser(
@@ -774,6 +913,11 @@ def main() -> None:
         help="Filter by memory_type (episodic, semantic, procedural, prospective)",
     )
     p_obs_export.add_argument("--scope", default="", help="Filter by scope")
+    p_obs_export.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Only write memories that are new or changed since last export",
+    )
 
     p_obs_import = sub.add_parser(
         "obsidian-import",
@@ -784,6 +928,45 @@ def main() -> None:
         "--source",
         default="obsidian-import",
         help="Source label for imported memories (default: obsidian-import)",
+    )
+    p_obs_import.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Only import files that are new or changed since last import",
+    )
+
+    p_gh_import = sub.add_parser(
+        "github-import",
+        help="Import git commit / PR / issue history as memories",
+    )
+    p_gh_import.add_argument("repo", help="Path to the local git repository")
+    p_gh_import.add_argument(
+        "--since",
+        default="",
+        metavar="DATE",
+        help="Only import items after this date (e.g. '2025-01-01' or '6 months ago')",
+    )
+    p_gh_import.add_argument(
+        "--branch",
+        default="",
+        help="Branch to walk for commits (default: current branch)",
+    )
+    p_gh_import.add_argument(
+        "--include",
+        default="commits",
+        metavar="TYPES",
+        help="Comma-separated list of item types: commits,prs,issues (default: commits)",  # noqa: E501
+    )
+    p_gh_import.add_argument(
+        "--project", default="", help="Project label for imported memories"
+    )
+    p_gh_import.add_argument(
+        "--scope", default="", help="Scope label for imported memories"
+    )
+    p_gh_import.add_argument(
+        "--incremental",
+        action="store_true",
+        help="Only import commits/items not yet seen since last import",
     )
 
     args = parser.parse_args()
@@ -799,16 +982,109 @@ def main() -> None:
         "decay": cmd_decay,
         "serve": cmd_serve,
         "consolidate": cmd_consolidate,
+        "graph": cmd_graph,
         "export": cmd_export,
         "import": cmd_import,
         "export-md": cmd_export_md,
         "import-md": cmd_import_md,
         "obsidian-export": cmd_obsidian_export,
         "obsidian-import": cmd_obsidian_import,
+        "github-import": cmd_github_import,
         "ingest": cmd_ingest,
         "debug-recall": cmd_debug_recall,
     }
     commands[args.command](args)
+
+
+def cmd_github_import(args: argparse.Namespace) -> None:
+    """Import git commit / PR / issue history from a repository as memories."""
+    from pathlib import Path
+
+    from .integrations.github import GitHubImporter
+    from .mcp import configure, do_store
+
+    configure(settings)
+
+    repo = Path(args.repo).resolve()
+    include = [s.strip() for s in args.include.split(",")]
+    importer = GitHubImporter()
+
+    # Incremental: filter to only new items via SyncRegistry
+    registry = None
+    only_shas: frozenset[str] | None = None
+    only_ids: frozenset[str] | None = None
+    src_key = str(repo)
+
+    if args.incremental:
+        from .integrations.sync import SyncRegistry
+
+        registry = SyncRegistry(settings.data_dir / "sync.db")
+
+        if "commits" in include:
+            import subprocess
+
+            sha_cmd = [
+                "git",
+                "-C",
+                str(repo),
+                "log",
+                "--no-merges",
+                "--format=%H",
+            ]
+            if args.since:
+                sha_cmd.extend(["--since", args.since])
+            if args.branch:
+                sha_cmd.append(args.branch)
+            result = subprocess.run(sha_cmd, capture_output=True, text=True, check=True)
+            all_shas = [ln.strip() for ln in result.stdout.splitlines() if ln.strip()]
+            new_shas = registry.filter_new_items("github-commits", src_key, all_shas)
+            only_shas = frozenset(new_shas)
+            unchanged_commits = len(all_shas) - len(new_shas)
+        else:
+            unchanged_commits = 0
+
+    try:
+        pairs = importer.import_(
+            repo,
+            since=args.since if not args.incremental else None,
+            branch=args.branch,
+            include=include,
+            project=args.project,
+            scope=args.scope,
+            only_shas=only_shas,
+            only_ids=only_ids,
+        )
+    except (RuntimeError, ValueError) as exc:
+        print(f"Error: {exc}")
+        raise SystemExit(1) from exc
+
+    stored = skipped = 0
+    imported_shas: list[str] = []
+    for content, meta in pairs:
+        store_result = do_store(
+            content,
+            project=meta.get("project", ""),
+            scope=meta.get("scope", ""),
+            memory_type=meta.get("memory_type", ""),
+            tags=meta.get("tags", ""),
+            source=meta.get("source", ""),
+        )
+        if store_result.get("status") in {"stored", "updated"}:
+            stored += 1
+            src = meta.get("source", "")
+            if src.startswith("git:"):
+                imported_shas.append(src[4:])
+        else:
+            skipped += 1
+
+    if registry is not None:
+        if imported_shas:
+            registry.record_items("github-commits", src_key, imported_shas)
+        suffix = f" ({unchanged_commits} commits already up to date)"
+    else:
+        suffix = ""
+
+    print(f"Imported {stored} memories ({skipped} skipped) from {repo}{suffix}")
 
 
 if __name__ == "__main__":

@@ -36,6 +36,11 @@ experimental = [
     # Math utilities for experimental decay curves
     "numpy>=2.4",
 ]
+ner = [
+    # spaCy NER for typed entity extraction during consolidation
+    # Install model separately: uv run python -m spacy download en_core_web_sm
+    "spacy>=3.7",
+]
 dev = [
     "pytest>=9.0",
     "pytest-asyncio>=1.0",
@@ -76,6 +81,10 @@ strict = true
 warn_return_any = true
 warn_unused_configs = true
 plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = "myelin.store.consolidation"
+warn_unused_ignores = false
 
 [tool.hatch.build.targets.wheel]
 packages = ["myelin"]

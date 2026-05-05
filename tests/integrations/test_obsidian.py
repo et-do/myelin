@@ -68,7 +68,7 @@ class TestObsidianExporter:
         assert index.exists()
         text = index.read_text()
         assert "Myelin Memory Index" in text
-        assert "Exported 2 memories" in text
+        assert "2** memories" in text
 
     def test_note_contains_frontmatter(self, tmp_path: Path) -> None:
         exporter = ObsidianExporter()

@@ -91,7 +91,7 @@ def _run_lme(subset: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     from benchmarks.longmemeval.run import run_instance
     from myelin.config import MyelinSettings
-    from myelin.reranker import Neocortex
+    from myelin.recall.reranker import Neocortex
 
     cfg = MyelinSettings(data_dir=Path(tempfile.mkdtemp()))
     embedder = SentenceTransformer(cfg.embedding_model)
@@ -123,7 +123,7 @@ def _run_locomo(subset: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     from benchmarks.locomo.run import run_conversation
     from myelin.config import MyelinSettings
-    from myelin.reranker import Neocortex
+    from myelin.recall.reranker import Neocortex
 
     cfg = MyelinSettings(data_dir=Path(tempfile.mkdtemp()))
     embedder = SentenceTransformer(cfg.embedding_model)

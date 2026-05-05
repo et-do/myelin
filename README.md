@@ -31,6 +31,10 @@
     It encodes context, strengthens with use, separates patterns, and prunes what fades —<br />
     no LLM calls, no API keys, fully offline.
   </p>
+
+  <p>
+    <strong>98.2% Recall@5 on LongMemEval</strong> — beats GPT-4o-based systems using only local 22M-parameter models.
+  </p>
 </div>
 
 <br />
@@ -487,6 +491,7 @@ myelin obsidian-export ~/vaults/work  # Export to an Obsidian vault (graph view)
 myelin obsidian-import ~/vaults/work  # Import from an Obsidian vault
 myelin ingest ./docs/       # Bulk-load .txt/.md/.json files into memory
 myelin debug-recall "your query"  # Full pipeline breakdown for debugging
+myelin graph                      # Launch browser admin dashboard (Graph | Overview | Memories)
 ```
 
 `myelin stats` accepts `--project`, `--agent-id`, and `--json` flags for filtering and machine-readable output.

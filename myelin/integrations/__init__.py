@@ -13,15 +13,23 @@ Adding a new integration
 from __future__ import annotations
 
 from .base import Exporter, Importer
+from .github import GitHubImporter
+from .ingest import IngestResult, ingest_directory, ingest_file
 from .obsidian import ObsidianExporter, ObsidianImporter
+from .sync import SyncRegistry
 
 __all__ = [
     "EXPORTERS",
     "IMPORTERS",
     "Exporter",
+    "GitHubImporter",
     "Importer",
+    "IngestResult",
     "ObsidianExporter",
     "ObsidianImporter",
+    "SyncRegistry",
+    "ingest_directory",
+    "ingest_file",
 ]
 
 #: Registry of available exporters keyed by integration name.
@@ -31,5 +39,6 @@ EXPORTERS: dict[str, type[Exporter]] = {
 
 #: Registry of available importers keyed by integration name.
 IMPORTERS: dict[str, type[Importer]] = {
+    "github": GitHubImporter,
     "obsidian": ObsidianImporter,
 }

@@ -102,25 +102,35 @@ class ObsidianExporter(Exporter):
             Number of notes written.
         """
         include_entity_links: bool = opts.get("include_entity_links", True)
+        skip_ids: frozenset[str] = frozenset(opts.get("skip_ids", ()))
 
         dest.mkdir(parents=True, exist_ok=True)
         memories_root = dest / "Memories"
         memories_root.mkdir(exist_ok=True)
 
-        # Group by memory_type for subfolder organisation
+        # Build lookup structures for index pages
         by_type: dict[str, list[dict[str, Any]]] = {}
+        by_project: dict[str, list[dict[str, Any]]] = {}
+        by_scope: dict[str, list[dict[str, Any]]] = {}
+
         for m in memories:
             mtype = str(m.get("memory_type") or "general")
+            project = str(m.get("project") or "")
+            scope = str(m.get("scope") or "")
             by_type.setdefault(mtype, []).append(m)
+            if project:
+                by_project.setdefault(project, []).append(m)
+            if scope:
+                by_scope.setdefault(scope, []).append(m)
 
         written = 0
-        index_sections: list[str] = []
+        # note_refs[id] = (rel_link, title) for use in index pages
+        note_refs: dict[str, tuple[str, str]] = {}
 
         for mtype in sorted(by_type):
             mems = by_type[mtype]
             type_dir = memories_root / mtype
             type_dir.mkdir(exist_ok=True)
-            index_sections.append(f"\n## {mtype.title()}\n")
 
             for m in mems:
                 mid: str = str(m.get("id", ""))
@@ -132,14 +142,22 @@ class ObsidianExporter(Exporter):
                 slug = _slugify(title)
                 fname = f"{mid[:8]}-{slug}.md" if slug else f"{mid[:8]}.md"
 
+                rel_link = f"Memories/{mtype}/{fname[:-3]}"
+                note_refs[mid] = (rel_link, title)  # always register for index
+
+                if mid in skip_ids:
+                    continue  # file already up to date on disk
+
                 # --- YAML frontmatter ---
-                tags = ["myelin", f"type/{mtype}"]
                 project = str(m.get("project") or "")
                 scope = str(m.get("scope") or "")
                 source = str(m.get("source") or "")
                 created_at = str(m.get("created_at") or "")
+                last_accessed = str(m.get("last_accessed") or "")
+                access_count = m.get("access_count", 0)
                 raw_tags = str(m.get("tags") or "")
 
+                tags = ["myelin", f"type/{mtype}"]
                 if project:
                     tags.append(f"project/{project}")
                 if scope:
@@ -154,18 +172,36 @@ class ObsidianExporter(Exporter):
                 for tag in tags:
                     fm.append(f"  - {tag}")
                 if project:
-                    fm.append(f"project: {project}")
+                    fm.append(f"project: {_yaml_str(project)}")
                 if scope:
-                    fm.append(f"scope: {scope}")
+                    fm.append(f"scope: {_yaml_str(scope)}")
                 fm.append(f"memory_type: {mtype}")
                 if source:
                     fm.append(f"source: {source}")
                 if created_at:
                     fm.append(f"created_at: {_yaml_str(created_at)}")
+                if last_accessed:
+                    fm.append(f"last_accessed: {_yaml_str(last_accessed)}")
+                if access_count:
+                    fm.append(f"access_count: {access_count}")
                 fm.append("---")
 
                 # --- Body ---
                 body_parts = [content]
+
+                # Context callout (project + scope header)
+                if project or scope:
+                    ctx_parts = []
+                    if project:
+                        ctx_parts.append(f"**Project:** {project}")
+                    if scope:
+                        ctx_parts.append(f"**Scope:** {scope}")
+                    if raw_tags:
+                        ctx_parts.append(f"**Tags:** {raw_tags}")
+                    body_parts.append(
+                        "\n> [!info] Context\n> " + "  \n> ".join(ctx_parts)
+                    )
+
                 if include_entity_links:
                     entities = extract_entities(content)
                     if entities:
@@ -176,18 +212,175 @@ class ObsidianExporter(Exporter):
 
                 note = "\n".join(fm) + "\n\n" + "\n".join(body_parts) + "\n"
                 (type_dir / fname).write_text(note, encoding="utf-8")
-
-                rel_link = f"Memories/{mtype}/{fname[:-3]}"
-                index_sections.append(f"- [[{rel_link}|{title[:60]}]]")
                 written += 1
 
-        # --- Index note ---
-        index_body = (
-            "---\ntags:\n  - myelin\n  - index\n---\n\n"
-            "# Myelin Memory Index\n\n"
-            f"Exported {written} memories.\n" + "\n".join(index_sections) + "\n"
+        # --- Project index pages ---
+        if by_project:
+            proj_dir = dest / "Projects"
+            proj_dir.mkdir(exist_ok=True)
+            for proj_name in sorted(by_project):
+                proj_mems = by_project[proj_name]
+                # Group by scope within project
+                by_scope_within: dict[str, list[dict[str, Any]]] = {}
+                for m in proj_mems:
+                    sc = str(m.get("scope") or "_general")
+                    by_scope_within.setdefault(sc, []).append(m)
+
+                # Collect memory type distribution
+                type_counts: dict[str, int] = {}
+                for m in proj_mems:
+                    mt = str(m.get("memory_type") or "general")
+                    type_counts[mt] = type_counts.get(mt, 0) + 1
+                type_summary = ", ".join(
+                    f"{cnt} {mt}" for mt, cnt in sorted(type_counts.items())
+                )
+
+                lines = [
+                    "---",
+                    f"project: {_yaml_str(proj_name)}",
+                    "tags:",
+                    "  - myelin",
+                    f"  - project/{_slugify(proj_name)}",
+                    "---",
+                    "",
+                    f"# {proj_name}",
+                    "",
+                    f"> {len(proj_mems)} memories — {type_summary}",
+                    "",
+                ]
+                for sc in sorted(by_scope_within):
+                    display_sc = sc if sc != "_general" else "General"
+                    lines.append(f"\n## {display_sc}\n")
+                    for m in by_scope_within[sc]:
+                        mid = str(m.get("id", ""))
+                        ref = note_refs.get(mid)
+                        if ref:
+                            rel_link, title = ref
+                            mt = str(m.get("memory_type") or "")
+                            lines.append(
+                                f"- [[{rel_link}|{title[:60]}]]"
+                                + (f" `{mt}`" if mt else "")
+                            )
+
+                (proj_dir / f"{_slugify(proj_name)}.md").write_text(
+                    "\n".join(lines) + "\n", encoding="utf-8"
+                )
+
+        # --- Scope index pages ---
+        if by_scope:
+            scope_dir = dest / "Scopes"
+            scope_dir.mkdir(exist_ok=True)
+            for scope_name in sorted(by_scope):
+                scope_mems = by_scope[scope_name]
+                # Group by project within scope
+                by_proj_within: dict[str, list[dict[str, Any]]] = {}
+                for m in scope_mems:
+                    pj = str(m.get("project") or "_none")
+                    by_proj_within.setdefault(pj, []).append(m)
+
+                lines = [
+                    "---",
+                    f"scope: {_yaml_str(scope_name)}",
+                    "tags:",
+                    "  - myelin",
+                    f"  - scope/{_slugify(scope_name)}",
+                    "---",
+                    "",
+                    f"# Scope: {scope_name}",
+                    "",
+                    f"> {len(scope_mems)} memories",
+                    "",
+                ]
+                for pj in sorted(by_proj_within):
+                    display_pj = pj if pj != "_none" else "No project"
+                    lines.append(f"\n## {display_pj}\n")
+                    for m in by_proj_within[pj]:
+                        mid = str(m.get("id", ""))
+                        ref = note_refs.get(mid)
+                        if ref:
+                            rel_link, title = ref
+                            lines.append(f"- [[{rel_link}|{title[:60]}]]")
+
+                (scope_dir / f"{_slugify(scope_name)}.md").write_text(
+                    "\n".join(lines) + "\n", encoding="utf-8"
+                )
+
+        # --- Memory Index (project-grouped) ---
+        index_lines = [
+            "---",
+            "tags:",
+            "  - myelin",
+            "  - index",
+            "---",
+            "",
+            "# Myelin Memory Index",
+            "",
+            f"Exported **{written}** memories across **{len(by_project)}** projects "
+            f"and **{len(by_type)}** memory types.",
+            "",
+        ]
+
+        # Stats table
+        if by_type:
+            index_lines += ["## By Type", "", "| Type | Count |", "| --- | --- |"]
+            for mt in sorted(by_type):
+                index_lines.append(f"| {mt} | {len(by_type[mt])} |")
+            index_lines.append("")
+
+        if by_project:
+            index_lines += ["## By Project", ""]
+            for proj_name in sorted(by_project):
+                proj_slug = _slugify(proj_name)
+                index_lines.append(
+                    f"- [[Projects/{proj_slug}|{proj_name}]] "
+                    f"({len(by_project[proj_name])} memories)"
+                )
+            index_lines.append("")
+
+        if by_scope:
+            index_lines += ["## By Scope", ""]
+            for sc in sorted(by_scope):
+                sc_slug = _slugify(sc)
+                index_lines.append(
+                    f"- [[Scopes/{sc_slug}|{sc}]] ({len(by_scope[sc])} memories)"
+                )
+            index_lines.append("")
+
+        # Full listing grouped by project → memory_type
+        index_lines += ["## All Memories", ""]
+        if by_project:
+            for proj_name in sorted(by_project):
+                index_lines.append(f"\n### {proj_name}\n")
+                proj_by_type: dict[str, list[dict[str, Any]]] = {}
+                for m in by_project[proj_name]:
+                    mt = str(m.get("memory_type") or "general")
+                    proj_by_type.setdefault(mt, []).append(m)
+                for mt in sorted(proj_by_type):
+                    index_lines.append(f"\n#### {mt.title()}\n")
+                    for m in proj_by_type[mt]:
+                        mid = str(m.get("id", ""))
+                        ref = note_refs.get(mid)
+                        if ref:
+                            rel_link, title = ref
+                            sc = str(m.get("scope") or "")
+                            index_lines.append(
+                                f"- [[{rel_link}|{title[:60]}]]"
+                                + (f" _{sc}_" if sc else "")
+                            )
+        else:
+            # No projects — fall back to type grouping
+            for mtype in sorted(by_type):
+                index_lines.append(f"\n### {mtype.title()}\n")
+                for m in by_type[mtype]:
+                    mid = str(m.get("id", ""))
+                    ref = note_refs.get(mid)
+                    if ref:
+                        rel_link, title = ref
+                        index_lines.append(f"- [[{rel_link}|{title[:60]}]]")
+
+        (dest / "Memory Index.md").write_text(
+            "\n".join(index_lines) + "\n", encoding="utf-8"
         )
-        (dest / "Memory Index.md").write_text(index_body, encoding="utf-8")
 
         return written
 
@@ -234,6 +427,9 @@ class ObsidianImporter(Importer):
             ``(content, metadata_kwargs)`` pairs.
         """
         default_source: str = str(opts.get("default_source", "obsidian-import"))
+        only_files: frozenset[Path] | None = (
+            frozenset(opts["only_files"]) if "only_files" in opts else None
+        )
 
         memories_root = src / "Memories"
         if not memories_root.exists():
@@ -241,6 +437,8 @@ class ObsidianImporter(Importer):
 
         results: list[tuple[str, dict[str, str]]] = []
         for md_file in sorted(memories_root.rglob("*.md")):
+            if only_files is not None and md_file not in only_files:
+                continue  # incremental: skip unchanged files
             text = md_file.read_text(encoding="utf-8", errors="replace")
             meta: dict[str, str] = {}
             body = text
