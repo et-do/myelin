@@ -31,6 +31,10 @@
     It encodes context, strengthens with use, separates patterns, and prunes what fades —<br />
     no LLM calls, no API keys, fully offline.
   </p>
+
+  <p>
+    <strong>98.2% Recall@5 on LongMemEval</strong> — beats GPT-4o-based systems using only local 22M-parameter models.
+  </p>
 </div>
 
 <br />
