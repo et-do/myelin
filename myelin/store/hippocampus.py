@@ -29,7 +29,7 @@ from ..recall.time_cells import (
     parse_temporal_reference,
     recency_boost,
 )
-from ..reranker import Neocortex
+from ..recall.reranker import Neocortex
 from .amygdala import passes_gate
 from .chunking import chunk
 from .entorhinal import (

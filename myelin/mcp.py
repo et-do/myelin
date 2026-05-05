@@ -19,18 +19,18 @@ from uuid import uuid4
 from mcp.server.fastmcp import FastMCP
 
 from .config import MyelinSettings, settings
-from .ingest import IngestResult, ingest_directory, ingest_file
+from .background import DecayTimer
+from .integrations.ingest import IngestResult, ingest_directory, ingest_file
 from .log import request_id, setup_logging, suppress_noisy_loggers
 from .models import MemoryMetadata, RecallResult
 from .recall import HebbianTracker, find_lru, find_stale
-from .reranker import Neocortex
+from .recall.reranker import Neocortex
 from .store import (
     Hippocampus,
     SemanticNetwork,
     ThalamicBuffer,
     replay,
 )
-from .timer import DecayTimer
 
 
 @asynccontextmanager

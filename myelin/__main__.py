@@ -1,5 +1,5 @@
-"""Allow running as `python -m myelin.server` or `python -m myelin`."""
+"""Allow running as `python -m myelin` or `python -m myelin.mcp`."""
 
-from myelin.server import main
+from myelin.mcp import main
 
 main()

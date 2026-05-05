@@ -1,28 +1,34 @@
-"""Background worker — async consolidation and scheduled decay.
+"""Background maintenance — periodic decay timer and off-hot-path worker thread.
 
-Moves memory maintenance off the hot path so store/recall tool calls
-are never blocked by consolidation or decay work.
+Merges two previously separate modules (``timer.py`` and ``worker.py``) into a
+single coherent module so that all background thread management lives in one
+place.
 
 Architecture
 ------------
-A single daemon thread processes work in two ways:
+Two classes serve different use cases:
 
-1. **Queue-driven** — consolidation requests are submitted via
-   ``submit_consolidate()`` (called by ``do_store`` every N stores).
-   The queue is bounded; if full, the task is silently dropped.
-   Consolidation is idempotent so drops are always safe.
+:class:`DecayTimer`
+    Simple periodic callback — fires a caller-supplied function every N hours
+    on a daemon thread.  Used in the MCP server lifespan for auto-decay sweeps.
 
-2. **Timer-driven** — if ``decay_interval_hours > 0``, a periodic decay
-   sweep fires on that cadence.  The worker checks whether decay is due
-   after each queue wait timeout, so it never sleeps longer than one
-   second while still respecting the interval.
+:class:`BackgroundWorker`
+    Queue-driven daemon thread with *both* queue tasks (consolidation) and a
+    built-in periodic decay sweep.  The single thread handles both concerns so
+    maintenance never blocks the hot path.
 
-Lifecycle
----------
-- ``start()`` — idempotent, starts the daemon thread.
-- ``stop(timeout)`` — signals STOP, joins thread.
-- Integrated with server lifespan: started during MCP server startup,
-  stopped during graceful shutdown.
+    1. **Queue-driven** — consolidation requests submitted via
+       :meth:`BackgroundWorker.submit_consolidate`.  Bounded queue; full-queue
+       drops are safe because consolidation is idempotent.
+    2. **Timer-driven** — decay sweep fires at ``decay_interval_hours`` cadence
+       inside the same loop, so the thread never sleeps longer than ~1 second
+       while still honouring the interval.
+
+Lifecycle (both classes)
+------------------------
+- ``start()`` — idempotent; starts the daemon thread.
+- ``stop()`` — signals STOP; joins thread.
+- Integrated with server lifespan: started during startup, stopped on shutdown.
 """
 
 from __future__ import annotations
@@ -36,6 +42,73 @@ from enum import Enum, auto
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+# ===========================================================================
+# DecayTimer
+# ===========================================================================
+
+
+class DecayTimer:
+    """Calls *fn* repeatedly on a background thread every *interval_hours* hours.
+
+    - ``interval_hours <= 0`` disables the timer; ``start()`` is a no-op.
+    - Exceptions raised by *fn* are logged and swallowed so the loop continues.
+    - ``stop()`` signals the thread and waits up to 2 s for a clean shutdown.
+    """
+
+    def __init__(self, fn: Callable[[], Any], interval_hours: float) -> None:
+        self._fn = fn
+        self._interval = interval_hours * 3600.0
+        self._stop = threading.Event()
+        self._thread: threading.Thread | None = None
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def start(self) -> None:
+        """Start the background timer thread (idempotent)."""
+        if self._interval <= 0:
+            return
+        if self._thread is not None and self._thread.is_alive():
+            return
+        self._stop.clear()
+        self._thread = threading.Thread(
+            target=self._loop,
+            daemon=True,
+            name="myelin-decay-timer",
+        )
+        self._thread.start()
+        logger.debug("decay timer started (interval=%.1fh)", self._interval / 3600.0)
+
+    def stop(self) -> None:
+        """Signal the timer to stop and wait for the thread to exit."""
+        self._stop.set()
+        if self._thread is not None:
+            self._thread.join(timeout=2.0)
+            self._thread = None
+
+    @property
+    def is_running(self) -> bool:
+        """True while the background thread is alive."""
+        return self._thread is not None and self._thread.is_alive()
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _loop(self) -> None:
+        while not self._stop.wait(timeout=self._interval):
+            try:
+                self._fn()
+            except Exception:
+                logger.exception("decay timer: error during sweep")
+
+
+# ===========================================================================
+# BackgroundWorker
+# ===========================================================================
 
 
 class _Task(Enum):
@@ -61,7 +134,7 @@ class BackgroundWorker:
         self._thread: threading.Thread | None = None
         self._last_consolidation_at: datetime | None = None
         self._last_decay_at: datetime | None = None
-        self._ts_lock = threading.Lock()  # protects last_* timestamps
+        self._ts_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Public API
@@ -86,7 +159,6 @@ class BackgroundWorker:
         """Signal the worker to stop and wait for it to finish."""
         if self._thread is None or not self._thread.is_alive():
             return
-        # Drain the queue and insert STOP so it is processed promptly.
         while not self._queue.empty():
             try:
                 self._queue.get_nowait()
@@ -95,17 +167,13 @@ class BackgroundWorker:
         try:
             self._queue.put_nowait(_Task.STOP)
         except queue.Full:
-            pass  # thread will exit on next timeout tick
+            pass
         self._thread.join(timeout=timeout)
         self._thread = None
         logger.info("background worker stopped")
 
     def submit_consolidate(self) -> bool:
-        """Queue a consolidation run.
-
-        Non-blocking.  Returns True if queued, False if queue was full
-        (task dropped — consolidation is idempotent so this is safe).
-        """
+        """Queue a consolidation run (non-blocking, idempotent on drop)."""
         try:
             self._queue.put_nowait(_Task.CONSOLIDATE)
             return True
@@ -118,7 +186,7 @@ class BackgroundWorker:
         return self._thread is not None and self._thread.is_alive()
 
     def status(self) -> dict[str, Any]:
-        """Return worker health info for inclusion in ``do_status()``."""
+        """Return worker health info for ``do_status()``."""
         with self._ts_lock:
             return {
                 "running": self.is_running,
@@ -138,7 +206,6 @@ class BackgroundWorker:
     # ------------------------------------------------------------------
 
     def _run(self) -> None:
-        """Worker loop — drain queue tasks and fire periodic decay."""
         next_decay = (
             _now().timestamp() + self._decay_interval_seconds
             if self._decay_interval_seconds > 0
@@ -146,7 +213,6 @@ class BackgroundWorker:
         )
 
         while True:
-            # Wait at most 1 second before checking if decay is due.
             if next_decay is not None:
                 wait = max(0.0, min(1.0, next_decay - _now().timestamp()))
             else:
@@ -163,7 +229,6 @@ class BackgroundWorker:
             if task is _Task.CONSOLIDATE:
                 self._run_consolidate()
 
-            # Fire periodic decay if the interval has elapsed.
             if next_decay is not None and _now().timestamp() >= next_decay:
                 self._run_decay()
                 next_decay = _now().timestamp() + self._decay_interval_seconds
@@ -191,3 +256,6 @@ class BackgroundWorker:
 
 def _now() -> datetime:
     return datetime.now(UTC)
+
+
+__all__ = ["DecayTimer", "BackgroundWorker"]

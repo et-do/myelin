@@ -1,4 +1,4 @@
-"""Neocortex — slow deliberative re-ranking via cross-encoder.
+"""Neocortex re-ranker — slow deliberative re-ranking via cross-encoder.
 
 Neuroscience basis: The neocortex performs slow, deliberative evaluation
 of memory candidates surfaced by the fast hippocampal retrieval pathway.
@@ -34,7 +34,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .log import suppress_noisy_loggers
+from ..log import suppress_noisy_loggers
 
 suppress_noisy_loggers()
 
@@ -79,3 +79,6 @@ class Neocortex:
         pairs: list[list[str]] = [[query, p] for p in passages]
         scores: Any = self._get_model().predict(pairs)  # type: ignore[arg-type]
         return [float(s) for s in scores]
+
+
+__all__ = ["Neocortex", "DEFAULT_CROSS_ENCODER"]

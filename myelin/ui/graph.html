@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Myelin — Admin</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --bg:      #0f1117;
+    --bg2:     #1a1d27;
+    --bg3:     #141720;
+    --border:  #2d3148;
+    --border2: #3b4268;
+    --text:    #e2e8f0;
+    --text2:   #94a3b8;
+    --text3:   #64748b;
+    --accent:  #7c3aed;
+    --accent2: #a78bfa;
+  }
+  body { background:var(--bg); color:var(--text); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; font-size:13px; height:100vh; display:flex; flex-direction:column; overflow:hidden; }
+
+  /* ── Shell ─────────────────────────────────────────────── */
+  #shell-header {
+    display:flex; align-items:center; gap:10px;
+    padding:8px 16px; background:var(--bg2);
+    border-bottom:1px solid var(--border); flex-shrink:0;
+    min-height:44px;
+  }
+  #shell-header h1 { font-size:14px; font-weight:700; color:var(--accent2); letter-spacing:.02em; }
+  .tab-bar { display:flex; gap:2px; margin-left:16px; }
+  .tab {
+    padding:5px 14px; border-radius:6px; font-size:12px; font-weight:500;
+    cursor:pointer; color:var(--text3); border:1px solid transparent;
+    transition:color .15s, background .15s;
+  }
+  .tab:hover { color:var(--text2); }
+  .tab.active { color:var(--accent2); background:var(--accent)1a; border-color:var(--border2); }
+  #header-stats { margin-left:auto; color:var(--text3); font-size:11px; display:flex; gap:12px; }
+  .hs-kpi { display:flex; flex-direction:column; align-items:flex-end; gap:1px; }
+  .hs-kpi .val { color:var(--accent2); font-weight:700; font-size:13px; }
+  .hs-kpi .lbl { font-size:10px; color:var(--text3); }
+
+  /* ── Tab panels ─────────────────────────────────────────── */
+  .tab-panel { display:none; flex:1; overflow:hidden; }
+  .tab-panel.active { display:flex; }
+
+  /* ── GRAPH TAB ──────────────────────────────────────────── */
+  #tab-graph { flex-direction:column; }
+  #graph-toolbar {
+    display:flex; align-items:center; gap:10px;
+    padding:6px 14px; background:var(--bg2);
+    border-bottom:1px solid var(--border); flex-shrink:0; flex-wrap:wrap;
+  }
+  #graph-toolbar label { color:var(--text2); font-size:11px; white-space:nowrap; }
+  #graph-toolbar input[type=range] { width:80px; accent-color:var(--accent); cursor:pointer; vertical-align:middle; }
+  #graph-toolbar input[type=text] {
+    background:var(--bg); border:1px solid var(--border); border-radius:5px;
+    color:var(--text); padding:3px 8px; font-size:12px; width:130px; outline:none;
+  }
+  #graph-toolbar input[type=text]:focus { border-color:var(--accent); }
+  .tb-sep { width:1px; height:18px; background:var(--border); flex-shrink:0; }
+  .tb-select { background:var(--bg); border:1px solid var(--border); border-radius:5px; color:var(--text); padding:3px 6px; font-size:11px; cursor:pointer; outline:none; max-width:130px; }
+  .tb-select:focus { border-color:var(--accent); }
+  .mtype-chips { display:flex; gap:4px; flex-wrap:wrap; }
+  .mtype-chip { padding:2px 8px; border-radius:10px; font-size:10px; cursor:pointer; border:1px solid transparent; opacity:.45; white-space:nowrap; transition:opacity .15s; }
+  .mtype-chip.active { opacity:1; border-color:currentColor; }
+  #graph-stats { margin-left:auto; color:var(--text3); font-size:11px; white-space:nowrap; }
+
+  #graph-canvas { flex:1; position:relative; overflow:hidden; }
+  #graph-canvas svg { width:100%; height:100%; }
+
+  .link { stroke:#334155; stroke-opacity:.55; stroke-linecap:round; transition:stroke-opacity .2s; }
+  .link.highlighted { stroke:var(--accent); stroke-opacity:.9; }
+  .link.dimmed { stroke-opacity:.06; }
+  .node circle { stroke-width:1.5; cursor:pointer; transition:opacity .2s; }
+  .node.dimmed circle { opacity:.1; }
+  .node.dimmed text  { opacity:.06; }
+  .node text { fill:#cbd5e1; font-size:10px; pointer-events:none; text-shadow:0 1px 3px var(--bg); }
+
+  #g-empty { position:absolute; inset:0; display:none; flex-direction:column; align-items:center; justify-content:center; color:var(--text3); gap:8px; }
+  #g-empty h2 { font-size:18px; color:var(--text2); }
+  #g-empty p  { font-size:13px; max-width:340px; text-align:center; line-height:1.6; }
+  #g-empty code { background:var(--bg2); border:1px solid var(--border); border-radius:4px; padding:2px 6px; color:var(--accent2); }
+
+  #legend {
+    position:absolute; bottom:16px; left:14px;
+    background:#1a1d27dd; border:1px solid var(--border);
+    border-radius:8px; padding:10px 12px; z-index:50;
+    font-size:11px; min-width:130px; backdrop-filter:blur(4px);
+  }
+  #legend h3 { font-size:10px; font-weight:600; color:var(--text3); text-transform:uppercase; letter-spacing:.08em; margin-bottom:7px; }
+  .legend-row { display:flex; align-items:center; gap:7px; margin-bottom:4px; color:var(--text2); }
+  .legend-dot { width:10px; height:10px; border-radius:50%; flex-shrink:0; }
+
+  /* tooltip */
+  #g-tooltip { position:fixed; background:var(--bg2); border:1px solid var(--border2); border-radius:8px; padding:10px 13px; font-size:12px; pointer-events:none; opacity:0; transition:opacity .1s; z-index:100; max-width:260px; line-height:1.7; }
+  #g-tooltip .tt-name { font-weight:700; color:var(--accent2); margin-bottom:3px; font-size:13px; }
+  #g-tooltip .tt-row { color:var(--text2); font-size:11px; }
+  #g-tooltip .tt-row span { color:var(--text); }
+  .tt-badge { display:inline-block; padding:1px 6px; border-radius:8px; font-size:10px; font-weight:600; margin-left:4px; }
+
+  /* sidebar */
+  #g-sidebar { position:absolute; right:0; top:0; bottom:0; width:300px; background:var(--bg2); border-left:1px solid var(--border); display:none; flex-direction:column; z-index:50; overflow:hidden; }
+  #g-sidebar.open { display:flex; }
+  #sb-header { padding:12px 14px 10px; border-bottom:1px solid var(--border); flex-shrink:0; }
+  .sb-title-row { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+  #sb-title { font-size:15px; font-weight:700; color:var(--accent2); word-break:break-all; }
+  .close-btn { cursor:pointer; color:var(--text3); font-size:18px; line-height:1; flex-shrink:0; background:none; border:none; padding:0; }
+  .close-btn:hover { color:var(--text); }
+  .meta-pills { display:flex; gap:5px; flex-wrap:wrap; margin-top:7px; }
+  .meta-pill { padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; border:1px solid transparent; }
+  #sb-body { flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:14px; }
+  .sb-section h4 { font-size:10px; font-weight:700; color:var(--text3); text-transform:uppercase; letter-spacing:.08em; margin-bottom:7px; }
+  .rel-chip { display:inline-block; background:var(--bg3); border:1px solid var(--border2); border-radius:10px; padding:2px 8px; margin:2px; font-size:11px; color:var(--text2); cursor:pointer; transition:border-color .12s, color .12s; }
+  .rel-chip:hover { border-color:var(--accent); color:var(--text); }
+  .rel-weight { color:var(--accent); font-style:normal; margin-left:3px; }
+  .mem-card { background:var(--bg3); border:1px solid #252a40; border-radius:7px; padding:9px 11px; margin-bottom:6px; }
+  .mem-snippet { font-size:11px; color:var(--text2); line-height:1.55; margin-bottom:7px; word-break:break-word; }
+  .mem-badges { display:flex; gap:4px; flex-wrap:wrap; }
+
+  /* ── OVERVIEW TAB ───────────────────────────────────────── */
+  #tab-overview { flex-direction:column; overflow-y:auto; }
+  .overview-inner { padding:20px 24px; display:flex; flex-direction:column; gap:24px; max-width:1100px; width:100%; }
+
+  .kpi-row { display:flex; gap:16px; flex-wrap:wrap; }
+  .kpi-card {
+    flex:1; min-width:160px; background:var(--bg2); border:1px solid var(--border);
+    border-radius:10px; padding:16px 18px;
+  }
+  .kpi-card .kpi-val { font-size:28px; font-weight:700; color:var(--accent2); line-height:1; margin-bottom:4px; }
+  .kpi-card .kpi-lbl { font-size:11px; color:var(--text3); font-weight:500; text-transform:uppercase; letter-spacing:.08em; }
+  .kpi-card .kpi-sub { font-size:11px; color:var(--text2); margin-top:6px; }
+
+  .charts-row { display:flex; gap:16px; flex-wrap:wrap; }
+  .chart-card { flex:1; min-width:280px; background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+  .chart-card h3 { font-size:12px; font-weight:600; color:var(--text2); margin-bottom:14px; text-transform:uppercase; letter-spacing:.06em; }
+
+  .bar-row { display:flex; align-items:center; gap:8px; margin-bottom:6px; }
+  .bar-label { font-size:11px; color:var(--text2); width:110px; flex-shrink:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; text-align:right; }
+  .bar-track { flex:1; background:#1e2235; border-radius:3px; height:14px; overflow:hidden; }
+  .bar-fill  { height:100%; border-radius:3px; transition:width .4s; min-width:3px; }
+  .bar-count { font-size:11px; color:var(--text3); width:28px; text-align:right; flex-shrink:0; }
+
+  .two-col { display:flex; gap:16px; flex-wrap:wrap; }
+  .list-card { flex:1; min-width:260px; background:var(--bg2); border:1px solid var(--border); border-radius:10px; padding:16px 18px; }
+  .list-card h3 { font-size:12px; font-weight:600; color:var(--text2); margin-bottom:12px; text-transform:uppercase; letter-spacing:.06em; }
+  .list-row { display:flex; justify-content:space-between; align-items:center; padding:5px 0; border-bottom:1px solid var(--border); font-size:12px; }
+  .list-row:last-child { border-bottom:none; }
+  .list-row .lr-name { color:var(--text); max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .list-row .lr-val  { color:var(--accent2); font-weight:600; font-size:12px; margin-left:8px; flex-shrink:0; }
+  .list-row .lr-badge { font-size:10px; padding:1px 6px; border-radius:8px; font-weight:600; }
+
+  /* decay warning */
+  .warning-card { background:#2a1a1a; border:1px solid #5a2020; border-radius:10px; padding:14px 18px; }
+  .warning-card h3 { font-size:12px; font-weight:600; color:#f87171; margin-bottom:10px; text-transform:uppercase; letter-spacing:.06em; }
+  .warning-row { font-size:11px; color:#fca5a5; padding:3px 0; border-bottom:1px solid #3b2020; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .warning-row:last-child { border-bottom:none; }
+
+  /* ── MEMORIES TAB ───────────────────────────────────────── */
+  #tab-memories { flex-direction:column; }
+  #mem-toolbar {
+    display:flex; align-items:center; gap:8px; flex-wrap:wrap;
+    padding:8px 14px; background:var(--bg2); border-bottom:1px solid var(--border); flex-shrink:0;
+  }
+  #mem-toolbar input[type=text] {
+    background:var(--bg); border:1px solid var(--border); border-radius:5px;
+    color:var(--text); padding:4px 8px; font-size:12px; width:220px; outline:none; flex-shrink:0;
+  }
+  #mem-toolbar input[type=text]:focus { border-color:var(--accent); }
+  #mem-count { margin-left:auto; color:var(--text3); font-size:11px; white-space:nowrap; }
+
+  #mem-table-wrap { flex:1; overflow:auto; }
+  table { width:100%; border-collapse:collapse; }
+  thead th {
+    position:sticky; top:0; background:var(--bg2); z-index:10;
+    padding:8px 12px; text-align:left; font-size:10px; font-weight:700;
+    color:var(--text3); text-transform:uppercase; letter-spacing:.08em;
+    border-bottom:1px solid var(--border); cursor:pointer; white-space:nowrap;
+    user-select:none;
+  }
+  thead th:hover { color:var(--text2); }
+  thead th .sort-arrow { margin-left:4px; opacity:.4; }
+  thead th.sorted .sort-arrow { opacity:1; color:var(--accent2); }
+  tbody tr { border-bottom:1px solid var(--border); }
+  tbody tr:hover { background:var(--bg2); }
+  tbody td { padding:7px 12px; font-size:12px; vertical-align:top; }
+  .td-content { color:var(--text); max-width:380px; }
+  .td-content-text { overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; line-height:1.5; }
+  .td-meta { color:var(--text2); white-space:nowrap; }
+  .td-num { color:var(--accent2); font-weight:600; text-align:right; }
+  .td-date { color:var(--text3); white-space:nowrap; font-size:11px; }
+  .badge { padding:1px 6px; border-radius:8px; font-size:10px; font-weight:600; display:inline-block; }
+</style>
+</head>
+<body>
+
+<!-- ── Shell header ─────────────────────────────────────── -->
+<div id="shell-header">
+  <h1>⬡ myelin</h1>
+  <div class="tab-bar">
+    <div class="tab active" data-tab="graph">Graph</div>
+    <div class="tab" data-tab="overview">Overview</div>
+    <div class="tab" data-tab="memories">Memories</div>
+  </div>
+  <div id="header-stats">
+    <div class="hs-kpi"><span class="val" id="hs-memories">—</span><span class="lbl">memories</span></div>
+    <div class="hs-kpi"><span class="val" id="hs-nodes">—</span><span class="lbl">entities</span></div>
+    <div class="hs-kpi"><span class="val" id="hs-projects">—</span><span class="lbl">projects</span></div>
+  </div>
+</div>
+
+<!-- ── GRAPH TAB ──────────────────────────────────────────── -->
+<div id="tab-graph" class="tab-panel active">
+  <div id="graph-toolbar">
+    <label>min weight
+      <input type="range" id="minWeight" min="0" max="5" step="0.5" value="0">
+      <span id="minWeightVal" style="color:var(--accent);font-weight:600;min-width:20px;display:inline-block">0</span>
+    </label>
+    <div class="tb-sep"></div>
+    <label>colour by
+      <select id="colorBy" class="tb-select">
+        <option value="entity_type">entity type</option>
+        <option value="project">project</option>
+        <option value="memory_type">memory type</option>
+      </select>
+    </label>
+    <div class="tb-sep"></div>
+    <label>project
+      <select id="projectFilter" class="tb-select"><option value="">all</option></select>
+    </label>
+    <div class="tb-sep"></div>
+    <div class="mtype-chips" id="mtypeChips"></div>
+    <div class="tb-sep"></div>
+    <input type="text" id="graphSearch" placeholder="search nodes…" autocomplete="off">
+    <span id="graph-stats"></span>
+  </div>
+  <div id="graph-canvas">
+    <svg id="svg">
+      <g id="links-layer"></g>
+      <g id="nodes-layer"></g>
+    </svg>
+    <div id="g-empty">
+      <h2>No entity graph yet</h2>
+      <p>Run <code>myelin consolidate</code> to build the semantic network from your stored memories, then refresh.</p>
+    </div>
+    <div id="legend"><h3 id="legend-title">Entity Type</h3><div id="legend-items"></div></div>
+    <div id="g-sidebar">
+      <div id="sb-header">
+        <div class="sb-title-row">
+          <span id="sb-title">—</span>
+          <button class="close-btn" onclick="closeSidebar()">✕</button>
+        </div>
+        <div class="meta-pills" id="sb-pills"></div>
+      </div>
+      <div id="sb-body"></div>
+    </div>
+  </div>
+  <div id="g-tooltip"></div>
+</div>
+
+<!-- ── OVERVIEW TAB ───────────────────────────────────────── -->
+<div id="tab-overview" class="tab-panel">
+  <div class="overview-inner" id="overview-inner"></div>
+</div>
+
+<!-- ── MEMORIES TAB ──────────────────────────────────────── -->
+<div id="tab-memories" class="tab-panel">
+  <div id="mem-toolbar">
+    <input type="text" id="memSearch" placeholder="search content, scope, tags…" autocomplete="off">
+    <select id="memProject" class="tb-select"><option value="">all projects</option></select>
+    <select id="memType" class="tb-select"><option value="">all types</option></select>
+    <select id="memScope" class="tb-select"><option value="">all scopes</option></select>
+    <span id="mem-count"></span>
+  </div>
+  <div id="mem-table-wrap">
+    <table>
+      <thead>
+        <tr>
+          <th data-col="content">Content <span class="sort-arrow">↕</span></th>
+          <th data-col="memory_type">Type <span class="sort-arrow">↕</span></th>
+          <th data-col="project">Project <span class="sort-arrow">↕</span></th>
+          <th data-col="scope">Scope <span class="sort-arrow">↕</span></th>
+          <th data-col="tags">Tags <span class="sort-arrow">↕</span></th>
+          <th data-col="access_count" class="sorted">Acc <span class="sort-arrow">↓</span></th>
+          <th data-col="last_accessed">Last Seen <span class="sort-arrow">↕</span></th>
+          <th data-col="created_at">Created <span class="sort-arrow">↕</span></th>
+        </tr>
+      </thead>
+      <tbody id="mem-tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+<script>
+// ══ Injected data ══════════════════════════════════════════════════════════
+const APP = /*APP_DATA*/{"graph":{},"all_memories":[],"stats":{}};
+
+const G = APP.graph || {};
+const ALL_MEMS = APP.all_memories || [];
+const STATS = APP.stats || {};
+
+// ══ Colour palettes ═════════════════════════════════════════════════════════
+const ET_COLOURS = {
+  concept:"#7c3aed", person:"#0ea5e9", project:"#10b981",
+  tech:"#f59e0b", org:"#ec4899", event:"#f97316",
+};
+const PROJ_PALETTE = ["#7c3aed","#0ea5e9","#10b981","#f59e0b","#ec4899","#f97316","#06b6d4","#84cc16","#ef4444","#8b5cf6"];
+const MT_COLOURS = { episodic:"#0ea5e9", semantic:"#7c3aed", procedural:"#10b981", prospective:"#f59e0b", general:"#94a3b8" };
+
+const projColour = {};
+((G.projects||[]).concat(Object.keys(STATS.by_project||{}))).filter((p,i,a)=>a.indexOf(p)===i)
+  .forEach((p, i) => { projColour[p] = PROJ_PALETTE[i % PROJ_PALETTE.length]; });
+
+// ══ Shell header KPIs ═══════════════════════════════════════════════════════
+document.getElementById("hs-memories").textContent = STATS.total || 0;
+document.getElementById("hs-nodes").textContent = (G.nodes||[]).length;
+document.getElementById("hs-projects").textContent = Object.keys(STATS.by_project||{}).length;
+
+// ══ Tab switching ════════════════════════════════════════════════════════════
+document.querySelectorAll(".tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".tab").forEach(t => t.classList.remove("active"));
+    document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+    tab.classList.add("active");
+    document.getElementById("tab-" + tab.dataset.tab).classList.add("active");
+    if (tab.dataset.tab === "overview") renderOverview();
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════════
+// GRAPH TAB
+// ══════════════════════════════════════════════════════════════════════════
+let gMinWeight=0, gSearch="", gColorBy="entity_type", gProjectFilter="", gHovered=null;
+const gActiveTypes=new Set();
+let simulation, linkSel, nodeSel;
+const svg = d3.select("#svg");
+const LL = svg.select("#links-layer"), NL = svg.select("#nodes-layer");
+
+function nodeColour(d) {
+  if (gColorBy==="project") return projColour[d.dominant_project] || "#475569";
+  if (gColorBy==="memory_type") { const m=(G.memories||{})[d.id]; return MT_COLOURS[m&&m[0]&&m[0].memory_type]||"#475569"; }
+  return ET_COLOURS[d.entity_type] || ET_COLOURS.concept;
+}
+
+function initGraphControls() {
+  const ps = document.getElementById("projectFilter");
+  (G.projects||[]).forEach(p => { const o=document.createElement("option"); o.value=p; o.textContent=p; ps.appendChild(o); });
+  const mc = document.getElementById("mtypeChips");
+  (G.memory_types||[]).forEach(t => {
+    const chip=document.createElement("span"); chip.className="mtype-chip"; chip.dataset.type=t;
+    chip.textContent=t; chip.style.color=MT_COLOURS[t]||"#94a3b8";
+    chip.style.background=(MT_COLOURS[t]||"#94a3b8")+"22";
+    chip.addEventListener("click",()=>{ if(gActiveTypes.has(t)){gActiveTypes.delete(t);chip.classList.remove("active");}else{gActiveTypes.add(t);chip.classList.add("active");} renderGraph(); });
+    mc.appendChild(chip);
+  });
+}
+
+function filteredGraph() {
+  let edges=(G.edges||[]).filter(e=>e.weight>=gMinWeight);
+  const eids=new Set(); edges.forEach(e=>{eids.add(e.source);eids.add(e.target);});
+  let nodes=(G.nodes||[]).filter(n=>eids.has(n.id));
+  if (gProjectFilter) {
+    nodes=nodes.filter(n=>(n.projects||[]).includes(gProjectFilter)||n.dominant_project===gProjectFilter);
+    const ps=new Set(nodes.map(n=>n.id)); edges=edges.filter(e=>ps.has(e.source)&&ps.has(e.target));
+  }
+  if (gActiveTypes.size>0) {
+    nodes=nodes.filter(n=>((G.memories||{})[n.id]||[]).some(m=>gActiveTypes.has(m.memory_type)));
+    const ms=new Set(nodes.map(n=>n.id)); edges=edges.filter(e=>ms.has(e.source)&&ms.has(e.target));
+  }
+  if (gSearch) {
+    const q=gSearch.toLowerCase();
+    const matched=new Set(nodes.filter(n=>n.id.toLowerCase().includes(q)).map(n=>n.id));
+    edges.forEach(e=>{const s=e.source.id||e.source,t=e.target.id||e.target;if(matched.has(s))matched.add(t);if(matched.has(t))matched.add(s);});
+    nodes=nodes.filter(n=>matched.has(n.id));
+    const ss=new Set(nodes.map(n=>n.id)); edges=edges.filter(e=>ss.has(e.source)&&ss.has(e.target));
+  }
+  return {nodes, edges};
+}
+
+const rScale = d3.scaleSqrt().domain([1,50]).range([4,18]).clamp(true);
+
+function renderGraph() {
+  const {nodes,edges}=filteredGraph();
+  const W=document.getElementById("graph-canvas").clientWidth,
+        H=document.getElementById("graph-canvas").clientHeight;
+  document.getElementById("graph-stats").textContent=`${nodes.length} nodes · ${edges.length} edges`;
+  document.getElementById("g-empty").style.display=(G.nodes||[]).length===0?"flex":"none";
+  const ns=nodes.map(d=>({...d})), es=edges.map(d=>({...d}));
+  if(simulation) simulation.stop();
+  simulation=d3.forceSimulation(ns)
+    .force("link",d3.forceLink(es).id(d=>d.id).distance(d=>60/Math.sqrt(d.weight||1)).strength(.7))
+    .force("charge",d3.forceManyBody().strength(-180).distanceMax(320))
+    .force("center",d3.forceCenter(W/2,H/2))
+    .force("collision",d3.forceCollide(d=>rScale(d.degree)+3))
+    .alphaDecay(.025);
+  LL.selectAll("*").remove();
+  linkSel=LL.selectAll("line").data(es).join("line")
+    .attr("class","link").attr("stroke-width",d=>Math.min(4,.8+Math.log1p(d.weight)));
+  NL.selectAll("*").remove();
+  nodeSel=NL.selectAll("g").data(ns).join("g").attr("class","node")
+    .call(drag(simulation))
+    .on("click",(event,d)=>{event.stopPropagation();openSidebar(d,buildAdj(es));})
+    .on("mouseover",(event,d)=>{gHovered=d.id;applyHL(es);showTip(event,d);})
+    .on("mousemove",moveTip).on("mouseout",()=>{gHovered=null;applyHL(es);hideTip();});
+  nodeSel.append("circle").attr("r",d=>rScale(d.degree)).attr("fill",d=>nodeColour(d)+"33").attr("stroke",d=>nodeColour(d));
+  nodeSel.append("text").attr("dy",d=>rScale(d.degree)+10).attr("text-anchor","middle")
+    .text(d=>d.id.length>22?d.id.slice(0,20)+"…":d.id);
+  simulation.on("tick",()=>{
+    linkSel.attr("x1",d=>d.source.x).attr("y1",d=>d.source.y).attr("x2",d=>d.target.x).attr("y2",d=>d.target.y);
+    nodeSel.attr("transform",d=>`translate(${d.x},${d.y})`);
+  });
+  updateLegend();
+  svg.on("click",()=>{gHovered=null;applyHL(es);});
+}
+
+function buildAdj(edges) {
+  const adj={};
+  edges.forEach(e=>{const s=e.source.id||e.source,t=e.target.id||e.target;(adj[s]=adj[s]||[]).push({name:t,weight:e.weight});(adj[t]=adj[t]||[]).push({name:s,weight:e.weight});});
+  return adj;
+}
+function applyHL(edges) {
+  if(!gHovered){linkSel&&linkSel.classed("dimmed",false).classed("highlighted",false);nodeSel&&nodeSel.classed("dimmed",false);return;}
+  const conn=new Set([gHovered]);
+  edges.forEach(e=>{const s=e.source.id||e.source,t=e.target.id||e.target;if(s===gHovered)conn.add(t);if(t===gHovered)conn.add(s);});
+  linkSel&&linkSel.classed("highlighted",d=>{const s=d.source.id||d.source,t=d.target.id||d.target;return s===gHovered||t===gHovered;}).classed("dimmed",d=>{const s=d.source.id||d.source,t=d.target.id||d.target;return s!==gHovered&&t!==gHovered;});
+  nodeSel&&nodeSel.classed("dimmed",d=>!conn.has(d.id));
+}
+function drag(sim) {
+  return d3.drag().on("start",(e,d)=>{if(!e.active)sim.alphaTarget(.3).restart();d.fx=d.x;d.fy=d.y;}).on("drag",(e,d)=>{d.fx=e.x;d.fy=e.y;}).on("end",(e,d)=>{if(!e.active)sim.alphaTarget(0);d.fx=null;d.fy=null;});
+}
+svg.call(d3.zoom().scaleExtent([.1,8]).on("zoom",e=>{LL.attr("transform",e.transform);NL.attr("transform",e.transform);}));
+
+const tip=document.getElementById("g-tooltip");
+function showTip(event,d){
+  const c=nodeColour(d);
+  const proj=d.dominant_project?`<span class="tt-badge" style="background:${projColour[d.dominant_project]||"#475569"}22;color:${projColour[d.dominant_project]||"#475569"}">${d.dominant_project}</span>`:"";
+  const others=(d.projects||[]).filter(p=>p!==d.dominant_project);
+  tip.innerHTML=`<div class="tt-name">${d.id}</div><div class="tt-row">type <span style="color:${c}">${d.entity_type||"concept"}</span></div><div class="tt-row">connections <span>${d.degree}</span></div>${d.memory_count>0?`<div class="tt-row">memories <span>${d.memory_count}</span>${proj}</div>`:""}${others.length?`<div class="tt-row">also in <span>${others.join(", ")}</span></div>`:""}`;
+  tip.style.opacity=1; moveTip(event);
+}
+function moveTip(e){tip.style.left=Math.min(e.clientX+14,window.innerWidth-280)+"px";tip.style.top=(e.clientY-10)+"px";}
+function hideTip(){tip.style.opacity=0;}
+
+function pill(text,c){return `<span class="meta-pill" style="background:${c}22;color:${c};border-color:${c}">${text}</span>`;}
+function badge(text,c){return `<span class="badge" style="background:${c}22;color:${c}">${text}</span>`;}
+function esc(s){return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");}
+
+function openSidebar(d,adj){
+  document.getElementById("sb-title").textContent=d.id;
+  const c=nodeColour(d);
+  const pills=[pill(d.entity_type||"concept",c)];
+  if(d.dominant_project) pills.push(pill(d.dominant_project,projColour[d.dominant_project]||"#475569"));
+  if(d.degree) pills.push(pill(`${d.degree} links`,"#64748b"));
+  if(d.memory_count>0) pills.push(pill(`${d.memory_count} memories`,"#94a3b8"));
+  document.getElementById("sb-pills").innerHTML=pills.join("");
+  const body=document.getElementById("sb-body"); body.innerHTML="";
+
+  const nb=(adj[d.id]||[]).sort((a,b)=>b.weight-a.weight);
+  const rd=document.createElement("div"); rd.className="sb-section";
+  rd.innerHTML=`<h4>Connected entities (${nb.length})</h4>`;
+  rd.innerHTML+=nb.length?nb.map(n=>`<span class="rel-chip" onclick="graphFocus('${esc(n.name)}')">${esc(n.name)}<em class="rel-weight">${n.weight.toFixed(1)}</em></span>`).join(""):(`<p style="color:var(--text3);font-size:11px">No connections.</p>`);
+  body.appendChild(rd);
+
+  if(d.projects&&d.projects.length){const pd=document.createElement("div");pd.className="sb-section";pd.innerHTML=`<h4>Projects</h4>`+d.projects.map(p=>badge(p,projColour[p]||"#475569")).join(" ");body.appendChild(pd);}
+
+  const mems=(G.memories||{})[d.id]||[];
+  if(mems.length){
+    const md=document.createElement("div"); md.className="sb-section";
+    md.innerHTML=`<h4>Related memories (${d.memory_count}${d.memory_count>mems.length?", showing "+mems.length:""})</h4>`;
+    mems.forEach(m=>{
+      const card=document.createElement("div"); card.className="mem-card";
+      const bs=[];
+      if(m.memory_type) bs.push(badge(m.memory_type,MT_COLOURS[m.memory_type]||"#94a3b8"));
+      if(m.project) bs.push(badge(m.project,projColour[m.project]||"#475569"));
+      if(m.scope) bs.push(badge(m.scope,"#475569"));
+      if(m.tags) m.tags.split(",").forEach(t=>{t=t.trim();if(t)bs.push(badge(t,"#334155"));});
+      card.innerHTML=`<div class="mem-snippet">${esc(m.snippet)}…</div><div class="mem-badges">${bs.join("")}</div>`;
+      md.appendChild(card);
+    });
+    body.appendChild(md);
+  }
+  document.getElementById("g-sidebar").classList.add("open");
+}
+function closeSidebar(){document.getElementById("g-sidebar").classList.remove("open");}
+function graphFocus(name){document.getElementById("graphSearch").value=name;gSearch=name.toLowerCase();renderGraph();}
+
+function updateLegend(){
+  document.getElementById("legend-title").textContent=gColorBy==="entity_type"?"Entity Type":gColorBy==="project"?"Project":"Memory Type";
+  const items=document.getElementById("legend-items"); items.innerHTML="";
+  const entries=gColorBy==="entity_type"?Object.entries(ET_COLOURS):gColorBy==="project"?Object.entries(projColour).slice(0,8):Object.entries(MT_COLOURS);
+  entries.forEach(([label,colour])=>{const row=document.createElement("div");row.className="legend-row";row.innerHTML=`<div class="legend-dot" style="background:${colour}"></div><span>${label}</span>`;items.appendChild(row);});
+}
+
+document.getElementById("minWeight").addEventListener("input",function(){gMinWeight=+this.value;document.getElementById("minWeightVal").textContent=this.value;renderGraph();});
+document.getElementById("colorBy").addEventListener("change",function(){gColorBy=this.value;renderGraph();});
+document.getElementById("projectFilter").addEventListener("change",function(){gProjectFilter=this.value;renderGraph();});
+document.getElementById("graphSearch").addEventListener("input",function(){gSearch=this.value.toLowerCase().trim();renderGraph();});
+window.addEventListener("resize",()=>{if(document.getElementById("tab-graph").classList.contains("active"))renderGraph();});
+
+// ══════════════════════════════════════════════════════════════════════════
+// OVERVIEW TAB
+// ══════════════════════════════════════════════════════════════════════════
+let overviewRendered=false;
+function renderOverview(){
+  if(overviewRendered) return;
+  overviewRendered=true;
+  const root=document.getElementById("overview-inner");
+  root.innerHTML="";
+
+  // KPI row
+  const kpiRow=document.createElement("div"); kpiRow.className="kpi-row";
+  const total=STATS.total||0;
+  const byType=STATS.by_type||{};
+  const byProj=STATS.by_project||{};
+  const byScope=STATS.by_scope||{};
+  const nodes=(G.nodes||[]);
+  const topType=Object.keys(byType).sort((a,b)=>byType[b]-byType[a])[0]||"—";
+  const topProj=Object.keys(byProj).sort((a,b)=>byProj[b]-byProj[a])[0]||"—";
+  [
+    {val:total, lbl:"Total Memories", sub:`most recent: ${topType}`},
+    {val:Object.keys(byProj).length, lbl:"Projects", sub:`largest: ${topProj}`},
+    {val:nodes.length, lbl:"Entity Nodes", sub:`${(G.edges||[]).length} relationships`},
+    {val:Object.keys(byType).length, lbl:"Memory Types", sub:Object.keys(byType).join(", ")||"—"},
+    {val:Object.keys(byScope).length, lbl:"Scopes", sub:`${total>0?Math.round((ALL_MEMS.filter(m=>m.access_count>3).length/total)*100):0}% high-access`},
+  ].forEach(k=>{
+    const c=document.createElement("div"); c.className="kpi-card";
+    c.innerHTML=`<div class="kpi-val">${k.val}</div><div class="kpi-lbl">${k.lbl}</div><div class="kpi-sub">${k.sub}</div>`;
+    kpiRow.appendChild(c);
+  });
+  root.appendChild(kpiRow);
+
+  // Charts row — by type + by project
+  const chartsRow=document.createElement("div"); chartsRow.className="charts-row";
+
+  function barChart(title, data, colourFn) {
+    const card=document.createElement("div"); card.className="chart-card";
+    card.innerHTML=`<h3>${title}</h3>`;
+    const max=Math.max(...Object.values(data),1);
+    Object.entries(data).forEach(([label,count])=>{
+      const c=colourFn(label);
+      const row=document.createElement("div"); row.className="bar-row";
+      row.innerHTML=`<div class="bar-label">${esc(label)}</div><div class="bar-track"><div class="bar-fill" style="width:${Math.round((count/max)*100)}%;background:${c}"></div></div><div class="bar-count">${count}</div>`;
+      card.appendChild(row);
+    });
+    return card;
+  }
+
+  chartsRow.appendChild(barChart("By Memory Type", byType, t=>MT_COLOURS[t]||"#7c3aed"));
+  const topProjs=Object.fromEntries(Object.entries(byProj).slice(0,10));
+  chartsRow.appendChild(barChart("By Project", topProjs, p=>projColour[p]||"#475569"));
+  root.appendChild(chartsRow);
+
+  // Two-col: top entities + scopes
+  const twoCol=document.createElement("div"); twoCol.className="two-col";
+
+  // Top entities by degree
+  const entCard=document.createElement("div"); entCard.className="list-card";
+  entCard.innerHTML=`<h3>Top Entities by Connections</h3>`;
+  const topEnts=[...nodes].sort((a,b)=>b.degree-a.degree).slice(0,12);
+  topEnts.forEach(n=>{
+    const c=ET_COLOURS[n.entity_type]||ET_COLOURS.concept;
+    const row=document.createElement("div"); row.className="list-row";
+    row.innerHTML=`<span class="lr-name">${esc(n.id)}</span><span>${badge(n.entity_type||"concept",c)}&nbsp;<span class="lr-val">${n.degree}</span></span>`;
+    entCard.appendChild(row);
+  });
+  if(!topEnts.length) entCard.innerHTML+=`<div style="color:var(--text3);font-size:12px;padding:8px 0">Run myelin consolidate to build entity graph</div>`;
+  twoCol.appendChild(entCard);
+
+  // Top scopes
+  const scopeCard=document.createElement("div"); scopeCard.className="list-card";
+  scopeCard.innerHTML=`<h3>Top Scopes</h3>`;
+  Object.entries(byScope).slice(0,12).forEach(([scope,count])=>{
+    const row=document.createElement("div"); row.className="list-row";
+    row.innerHTML=`<span class="lr-name">${esc(scope)}</span><span class="lr-val">${count}</span>`;
+    scopeCard.appendChild(row);
+  });
+  if(!Object.keys(byScope).length) scopeCard.innerHTML+=`<div style="color:var(--text3);font-size:12px;padding:8px 0">No scope metadata found</div>`;
+  twoCol.appendChild(scopeCard);
+  root.appendChild(twoCol);
+
+  // Decay candidates (access_count <= 1, older content)
+  const decayCandidates=ALL_MEMS.filter(m=>m.access_count<=1).slice(0,10);
+  if(decayCandidates.length){
+    const wc=document.createElement("div"); wc.className="warning-card";
+    wc.innerHTML=`<h3>⚠ Low-access memories (${ALL_MEMS.filter(m=>m.access_count<=1).length} total) — candidates for decay</h3>`;
+    decayCandidates.forEach(m=>{
+      const row=document.createElement("div"); row.className="warning-row";
+      row.textContent=`[${m.project||"—"}/${m.scope||"—"}] ${m.content.slice(0,90)}…`;
+      wc.appendChild(row);
+    });
+    wc.innerHTML+=`<div style="font-size:11px;color:#f87171;margin-top:8px">Run <code style="background:#3b2020;padding:1px 4px;border-radius:3px">myelin decay</code> to prune stale memories.</div>`;
+    root.appendChild(wc);
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════════
+// MEMORIES TAB
+// ══════════════════════════════════════════════════════════════════════════
+let memSort={col:"access_count", asc:false};
+let memFilters={search:"", project:"", type:"", scope:""};
+
+function initMemoriesTab(){
+  const projects=Object.keys(STATS.by_project||{});
+  const types=Object.keys(STATS.by_type||{});
+  const scopes=Object.keys(STATS.by_scope||{});
+  const pp=document.getElementById("memProject");
+  projects.forEach(p=>{const o=document.createElement("option");o.value=p;o.textContent=p;pp.appendChild(o);});
+  const tp=document.getElementById("memType");
+  types.forEach(t=>{const o=document.createElement("option");o.value=t;o.textContent=t;tp.appendChild(o);});
+  const sp=document.getElementById("memScope");
+  scopes.forEach(s=>{const o=document.createElement("option");o.value=s;o.textContent=s;sp.appendChild(o);});
+  document.getElementById("memSearch").addEventListener("input",function(){memFilters.search=this.value.toLowerCase().trim();renderMemTable();});
+  pp.addEventListener("change",function(){memFilters.project=this.value;renderMemTable();});
+  tp.addEventListener("change",function(){memFilters.type=this.value;renderMemTable();});
+  sp.addEventListener("change",function(){memFilters.scope=this.value;renderMemTable();});
+  document.querySelectorAll("#mem-table-wrap thead th[data-col]").forEach(th=>{
+    th.addEventListener("click",()=>{
+      const col=th.dataset.col;
+      if(memSort.col===col) memSort.asc=!memSort.asc;
+      else {memSort.col=col;memSort.asc=col==="content"||col==="project";}
+      document.querySelectorAll("thead th[data-col]").forEach(t=>{
+        t.classList.remove("sorted");
+        t.querySelector(".sort-arrow").textContent="↕";
+      });
+      th.classList.add("sorted");
+      th.querySelector(".sort-arrow").textContent=memSort.asc?"↑":"↓";
+      renderMemTable();
+    });
+  });
+  renderMemTable();
+}
+
+function renderMemTable(){
+  let rows=ALL_MEMS.filter(m=>{
+    if(memFilters.project && m.project!==memFilters.project) return false;
+    if(memFilters.type    && m.memory_type!==memFilters.type) return false;
+    if(memFilters.scope   && m.scope!==memFilters.scope) return false;
+    if(memFilters.search){
+      const q=memFilters.search;
+      if(!m.content.toLowerCase().includes(q)&&!m.scope.toLowerCase().includes(q)&&!m.tags.toLowerCase().includes(q)&&!m.project.toLowerCase().includes(q)) return false;
+    }
+    return true;
+  });
+
+  rows.sort((a,b)=>{
+    const col=memSort.col;
+    let av=a[col]||"", bv=b[col]||"";
+    if(typeof av==="number"||typeof bv==="number"){av=Number(av);bv=Number(bv);}
+    else {av=String(av).toLowerCase();bv=String(bv).toLowerCase();}
+    if(av<bv) return memSort.asc?-1:1;
+    if(av>bv) return memSort.asc?1:-1;
+    return 0;
+  });
+
+  document.getElementById("mem-count").textContent=`${rows.length} of ${ALL_MEMS.length} memories`;
+
+  const tbody=document.getElementById("mem-tbody");
+  tbody.innerHTML="";
+  rows.forEach(m=>{
+    const tr=document.createElement("tr");
+    const tc=projColour[m.project]||"#475569";
+    const mt_c=MT_COLOURS[m.memory_type]||"#94a3b8";
+    const tagBadges=(m.tags||"").split(",").filter(t=>t.trim()).map(t=>`<span class="badge" style="background:#33415522;color:#94a3b8">${esc(t.trim())}</span>`).join(" ");
+    tr.innerHTML=`
+      <td class="td-content"><div class="td-content-text">${esc(m.content)}</div></td>
+      <td class="td-meta">${m.memory_type?`<span class="badge" style="background:${mt_c}22;color:${mt_c}">${m.memory_type}</span>`:""}</td>
+      <td class="td-meta">${m.project?`<span class="badge" style="background:${tc}22;color:${tc}">${esc(m.project)}</span>`:""}</td>
+      <td class="td-meta">${m.scope?`<span style="color:var(--text2)">${esc(m.scope)}</span>`:""}</td>
+      <td class="td-meta">${tagBadges}</td>
+      <td class="td-num">${m.access_count}</td>
+      <td class="td-date">${m.last_accessed||"—"}</td>
+      <td class="td-date">${m.created_at||"—"}</td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+// ══ Init ═══════════════════════════════════════════════════════════════════
+initGraphControls();
+initMemoriesTab();
+renderGraph();
+</script>
+</body>
+</html>
